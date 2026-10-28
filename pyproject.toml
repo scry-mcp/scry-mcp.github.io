@@ -1,0 +1,59 @@
+[project]
+name = "scry-site"
+version = "0.1.0"
+description = "The Scry site, generated from the Scry repositories' own markdown"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    # The renderer and its anchors: headings get GitHub's slugs, so a link written for the
+    # repository's own page lands on the same heading here.
+    "markdown-it-py>=4,<5",
+    "mdit-py-plugins>=0.5,<1",
+]
+
+[project.scripts]
+scry-site = "scry_site.build:main"
+
+[dependency-groups]
+dev = ["mypy>=1.11", "pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["scry_site"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "W"]
+# N818 wants `...Error`; the concept is called INVALID across the Scry tools (exit code 3, and
+# the word the programs print), so the class that raises it is `Invalid`.
+ignore = ["N818"]
+
+[tool.mypy]
+# No path list: a hand-kept list of directories is always one short of the tree.
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_return_any = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `--cov` is here so every `pytest` judges the floor; `--no-cov` for a partial run.
+addopts = "--cov"
+
+[tool.coverage.run]
+branch = true
+source = ["scry_site", "tests"]
+
+[tool.coverage.report]
+# coverage.py's own floor, set to the total a full run measured and raised by hand from a run.
+fail_under = 97.5
+precision = 2
+show_missing = true

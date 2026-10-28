@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="{{description}}">
+<meta name="color-scheme" content="dark light">
+<title>{{title}}</title>
+<link rel="icon" href="{{root}}/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="{{root}}/site.css">
+</head>
+<body class="k-{{kind}}">
+<a class="skip" href="#content">Skip to the content</a>
+<header class="top">
+  <a class="brand" href="{{root}}/index.html"><span class="mark" aria-hidden="true">&#9608;</span> scry</a>
+  <nav aria-label="Site">
+    <a href="{{root}}/mame/index.html">MAME</a>
+    <a href="{{root}}/dosbox-x/index.html">DOSBox-X</a>
+    <a href="{{root}}/core/index.html">Core</a>
+    <a href="https://github.com/scry-mcp">GitHub</a>
+  </nav>
+</header>
+<div class="frame">
+<main class="doc" id="content">
+{{main}}
+</main>
+{{side}}
+{{right}}
+</div>
+<footer class="foot">{{credits}}</footer>
+</body>
+</html>

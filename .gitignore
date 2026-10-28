@@ -1,0 +1,13 @@
+# Caches, virtualenvs and coverage data: they regenerate, and a tracked one goes stale.
+__pycache__/
+*.py[co]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+**/._*
+**/.DS_Store
+# The built site: generated, never tracked.
+_site/
