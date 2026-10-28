@@ -2,7 +2,8 @@
 
 The Scry site, built from the Scry repositories' own markdown: each server's front door, its
 getting started, its reference and its demos, and scry-core's README. This repository holds the
-layout, the landing page's opening lines and the build. Every other word the site shows about a
+layout, the landing page's own wording (its opening, headings and link labels), each page's title
+and description, the navigation, and the build. Every other word the site shows about a
 server is read out of that server's repository at build time, so a rebuilt site says what the
 repositories say.
 
