@@ -92,7 +92,7 @@ def title_of(md: str, where: str) -> str:
     return m[1].replace("`", "").strip()
 
 
-def section(md: str, heading: str, where: str) -> str:
+def under_heading(md: str, heading: str, where: str) -> str:
     m = re.search(rf"^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", masked(md), re.M | re.S)
     if not m:
         raise Invalid(f"{where}: no section '## {heading}'")
@@ -108,7 +108,7 @@ def lede(md: str, where: str) -> str:
 
 def install(md: str, where: str) -> tuple[str, str]:
     """The sentence that says what a first run needs, and the ```sh block that installs."""
-    body = section(md, "Two minutes to a first answer", where)
+    body = under_heading(md, "Two minutes to a first answer", where)
     m = re.search(r"\A\s*(.+?\.)(?=\s|$).*?```sh\n(.*?)```", body, re.S)
     if not m:
         raise Invalid(f"{where}: 'Two minutes to a first answer' does not open with a sentence "
@@ -118,7 +118,7 @@ def install(md: str, where: str) -> tuple[str, str]:
 
 def platforms(md: str, where: str) -> str:
     """The hosts the server runs on: the first clause of its 'Platforms' section."""
-    m = re.match(r"\s*([^.:\n\[\]`]+)[.:]", section(md, "Platforms", where))
+    m = re.match(r"\s*([^.:\n\[\]`]+)[.:]", under_heading(md, "Platforms", where))
     if not m:
         raise Invalid(f"{where}: 'Platforms' does not open with the hosts it runs on")
     return m[1]

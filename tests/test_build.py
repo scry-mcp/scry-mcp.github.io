@@ -375,9 +375,9 @@ def test_a_hash_line_inside_a_fence_is_no_heading_and_no_section_edge() -> None:
          "still real\n\n## Next\n"
     assert sources.title_of(md, "x") == "Real title"
     assert sources.lede(md, "x") == "The lede."
-    assert sources.section(md, "Real", "x") == "body\n```\n## inside\n```\nstill real\n\n"
+    assert sources.under_heading(md, "Real", "x") == "body\n```\n## inside\n```\nstill real\n\n"
     with pytest.raises(Invalid):
-        sources.section(md, "Not a section", "x")
+        sources.under_heading(md, "Not a section", "x")
     with pytest.raises(Invalid):
         sources.title_of("```\n# only in a fence\n```\n", "x")
 

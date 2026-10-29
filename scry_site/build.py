@@ -31,7 +31,7 @@ from scry_site.sources import (
     platforms,
     read,
     repos,
-    section,
+    under_heading,
 )
 
 TAGLINE = "MCP servers that hold MAME or DOSBox-X open and answer by name."
@@ -48,7 +48,7 @@ def template(name: str, **fill: str) -> str:
 
 def credits_line(core: Repo) -> str:
     """The credits line every Scry README closes with, rendered once for every page's footer."""
-    body = section(read(core, "README.md"), "Credits", "scry-core/README.md").strip()
+    body = under_heading(read(core, "README.md"), "Credits", "scry-core/README.md").strip()
     if "\n" in body or not body.startswith("Developed by Optimiza"):
         raise Invalid("scry-core/README.md: '## Credits' must hold one line, starting "
                       f"'Developed by Optimiza'; it holds: {body[:80]!r}")
@@ -130,7 +130,7 @@ def getting_started(rs: list[Repo]) -> list[Page]:
         md = read(r, "README.md")
         where = f"{r.name}/README.md"
         body = f"# Getting started with {r.label}\n\n" + "".join(
-            f"## {h}\n{section(md, h, where)}" for h in ("Two minutes to a first answer",
+            f"## {h}\n{under_heading(md, h, where)}" for h in ("Two minutes to a first answer",
                                                          "Platforms"))
         out.append(Page(r, "README.md", f"{r.key}/getting-started.html", "overview", body,
                         title=f"Getting started with {r.label}", label="Getting started",
@@ -249,14 +249,14 @@ def build(base: Path, out: Path) -> dict[str, int]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="scry-site", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("repos", type=Path,
+    ap.add_argument("checkouts", type=Path,
                     help="the directory holding the scry-core, scry-mame and scry-dosbox-x "
                          "checkouts")
     ap.add_argument("--out", type=Path, default=Path("_site"),
                     help="where the site goes, replaced whole once it checks; default _site")
     args = ap.parse_args(argv)
     try:
-        report = build(args.repos.expanduser(), args.out.expanduser())
+        report = build(args.checkouts.expanduser(), args.out.expanduser())
     except Invalid as e:
         print(f"INVALID: {e}", file=sys.stderr)
         return 3
