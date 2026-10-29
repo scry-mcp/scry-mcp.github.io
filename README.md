@@ -2,8 +2,8 @@
 
 The Scry site, built from the Scry repositories' own markdown: each server's front door, its
 getting started, its reference and its demos, and scry-core's README. This repository holds the
-layout, the landing page's own wording (its opening, headings and link labels), each page's title
-and description, the navigation, and the build. Every other word the site shows about a
+layout, the landing page's own wording (its opening, headings and link labels), the navigation,
+and the build. A page's title and its description (its first paragraph) come from its source. Every other word the site shows about a
 server is read out of that server's repository at build time, so a rebuilt site says what the
 repositories say.
 
@@ -56,7 +56,8 @@ And it lists every one of these:
   on GitHub.
 - `scry_site/check.py` follows every link inside the built site.
 - `scry_site/build.py` puts it together: the getting-started pages, the landing, the page list,
-  and the swap into `--out`.
+  a markdown twin of every page with its links pointed at the other twins, `llms.txt` listing
+  them, and the swap into `--out`.
 - `scry_site/templates/` and `scry_site/static/` are the layout and the look; the fonts are
   served with the site under the SIL Open Font License (`scry_site/static/fonts/`).
 
