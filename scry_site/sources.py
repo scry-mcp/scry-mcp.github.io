@@ -42,7 +42,7 @@ GROUPS = (("overview", "Overview"), ("demos", "Demos"), ("reference", "Reference
 
 def repos(base: Path) -> list[Repo]:
     found = [Repo(k, n, label, base / n) for k, n, label in SERVERS]
-    found.append(Repo("core", "scry-core", "Core", base / "scry-core"))
+    found.append(Repo("core", "scry-core", "Shared core", base / "scry-core"))
     for r in found:
         if not (r.root / "README.md").is_file():
             raise Invalid(f"no {r.name} checkout at {r.root}")
@@ -65,25 +65,45 @@ def read(repo: Repo, src: str) -> str:
         raise Invalid(f"cannot read {repo.name}/{src}: {e}") from e
 
 
+def masked(md: str) -> str:
+    """`md` with every fenced code block, fences included, blanked to spaces, same length: a
+    `# ` or `**` inside a fence is code, never a heading or a lede."""
+    out, fence = [], ""
+    for line in md.splitlines(keepends=True):
+        m = re.match(r" {0,3}(`{3,}|~{3,})", line)
+        if fence:
+            closes = m and m[1][0] == fence[0] and len(m[1]) >= len(fence) \
+                and line.strip() == m[1]
+            if closes:
+                fence = ""
+            out.append(re.sub(r"[^\n]", " ", line))
+        elif m:
+            fence = m[1]
+            out.append(re.sub(r"[^\n]", " ", line))
+        else:
+            out.append(line)
+    return "".join(out)
+
+
 def title_of(md: str, where: str) -> str:
-    m = re.search(r"^# (.+)$", md, re.M)
+    m = re.search(r"^# (.+)$", masked(md), re.M)
     if not m:
         raise Invalid(f"{where}: no level-one heading ('# ...') to title the page")
     return m[1].replace("`", "").strip()
 
 
 def section(md: str, heading: str, where: str) -> str:
-    m = re.search(rf"^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", md, re.M | re.S)
+    m = re.search(rf"^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", masked(md), re.M | re.S)
     if not m:
         raise Invalid(f"{where}: no section '## {heading}'")
-    return m[1]
+    return md[m.start(1):m.end(1)]
 
 
 def lede(md: str, where: str) -> str:
-    m = re.search(r"^\*\*(.+?)\*\*", md, re.M | re.S)
+    m = re.search(r"^\*\*(.+?)\*\*", masked(md), re.M | re.S)
     if not m:
         raise Invalid(f"{where}: no bold opening sentence ('**...**' at the start of a line)")
-    return " ".join(m[1].split())
+    return " ".join(md[m.start(1):m.end(1)].split())
 
 
 def install(md: str, where: str) -> tuple[str, str]:
@@ -144,7 +164,7 @@ def collect(rs: list[Repo]) -> tuple[list[Page], dict[str, set[str]]]:
     for r in rs:
         if r.key == "core":
             pages.append(Page(r, "README.md", "core/index.html", "core", read(r, "README.md"),
-                              label="Core"))
+                              label="Shared core"))
             continue
         own = files[r.key]
         readme = read(r, "README.md")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scry_site import build
+from scry_site import build, render, sources
 from scry_site.check import check
 from scry_site.sources import Invalid
 
@@ -211,6 +211,16 @@ def test_check_names_a_missing_file_and_a_missing_id(tmp_path: Path) -> None:
     assert "a.html: pic.png (no file)" in str(e.value)
 
 
+def test_check_refuses_a_link_whose_case_differs_from_the_file(tmp_path: Path) -> None:
+    (tmp_path / "a.html").write_text('<a href="Guide.html">x</a><img src="Pic.PNG">')
+    (tmp_path / "guide.html").write_text("<p>y</p>")
+    (tmp_path / "pic.png").write_bytes(b"\x89PNG")
+    with pytest.raises(Invalid) as e:
+        check(tmp_path)
+    assert "a.html: Guide.html (no file)" in str(e.value)
+    assert "a.html: Pic.PNG (no file)" in str(e.value)
+
+
 def test_check_examining_nothing_is_invalid(tmp_path: Path) -> None:
     with pytest.raises(Invalid, match="no page"):
         check(tmp_path)
@@ -357,3 +367,76 @@ def test_check_refuses_a_link_out_of_the_site(tmp_path: Path) -> None:
         check(tmp_path)
     assert "a.html: ../outside.html (outside the site)" in str(e.value)
     assert "a.html: /etc/hosts (outside the site)" in str(e.value)
+
+
+def test_a_hash_line_inside_a_fence_is_no_heading_and_no_section_edge() -> None:
+    md = "```sh\n# a comment, not a title\n## Not a section\n```\n\n# Real title\n\n" \
+         "```\n**not a lede**\n```\n\n**The lede.**\n\n## Real\nbody\n```\n## inside\n```\n" \
+         "still real\n\n## Next\n"
+    assert sources.title_of(md, "x") == "Real title"
+    assert sources.lede(md, "x") == "The lede."
+    assert sources.section(md, "Real", "x") == "body\n```\n## inside\n```\nstill real\n\n"
+    with pytest.raises(Invalid):
+        sources.section(md, "Not a section", "x")
+    with pytest.raises(Invalid):
+        sources.title_of("```\n# only in a fence\n```\n", "x")
+
+
+def test_a_wav_a_page_links_is_copied_so_the_site_plays_it(repos: Path, tmp_path: Path) -> None:
+    git_repo(tmp_path / "wav" / "scry-mame", {
+        **server("mame", "MAME", "gridlee"),
+        "demos/gridlee/README.md": "# Gridlee: a demo\n\nHeld to [music.wav](music.wav).\n",
+        "demos/gridlee/music.wav": b"RIFF"})
+    git_repo(tmp_path / "wav" / "scry-dosbox-x", server("dosbox-x", "DOSBox-X", "bricks"))
+    git_repo(tmp_path / "wav" / "scry-core", {
+        "README.md": f"# scry-core\n\nShared.\n\n## Credits\n\n{CREDITS}\n"})
+    build.build(tmp_path / "wav", tmp_path / "site")
+    page = (tmp_path / "site/mame/demos/gridlee/index.html").read_text()
+    assert 'href="music.wav"' in page
+    assert (tmp_path / "site/mame/demos/gridlee/music.wav").read_bytes() == b"RIFF"
+
+
+def test_every_page_has_a_markdown_twin_and_llms_txt_lists_them(repos: Path,
+                                                                 tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    twin = (site / "mame/reference/read.md").read_text()
+    assert twin.startswith("# The Read tools") and "[start](session.md#start)" in twin
+    assert "](../../../dosbox-x/index.md)" not in twin
+    readme = (site / "mame/index.md").read_text()
+    assert "[the demo](demos/gridlee/index.md)" in readme
+    assert "[Session](reference/index.md#the-session)" in readme
+    assert not (site / "mame/getting-started.md").exists()
+    llms = (site / "llms.txt").read_text()
+    assert llms.startswith("# Scry\n\n> ")
+    assert "- [The Read tools](mame/reference/read.md): " in llms
+    assert "## MAME\n" in llms and "## Shared core\n" in llms
+    assert "getting-started" not in llms
+
+
+def test_a_page_describes_itself_by_its_first_paragraph(repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    read = (tmp_path / "site/dosbox-x/demos/bricks/index.html").read_text()
+    assert '<meta name="description" content="Scry: ' not in read
+    core = (tmp_path / "site/core/index.html").read_text()
+    assert '<meta name="description" content="Shared.">' in core
+    assert ">Shared core</a>" in core and ">Core</a>" not in core
+
+
+def _page(markdown: str) -> sources.Page:
+    repo = sources.Repo("mame", "scry-mame", "MAME", Path("."))
+    return sources.Page(repo, "README.md", "mame/index.html", "overview", markdown,
+                        title="Title")
+
+
+def test_a_long_first_paragraph_is_cut_at_a_word_and_a_page_without_one_has_its_title() -> None:
+    words = " ".join(["word"] * 80)
+    cut = build.describe(_page(f"# Title\n\n```\ncode\n```\n\n{words}.\n"))
+    assert len(cut) <= 201 and cut.endswith("word…"), cut
+    assert build.describe(_page("# Title\n\n- only a list\n")) == "Title"
+
+
+def test_a_link_in_a_fenced_block_of_a_twin_is_code_and_stays_as_written() -> None:
+    links = render.Links({("mame", "README.md"): "mame/index.html"}, {"mame": {"README.md"}})
+    twin = render.twin(_page("[home](README.md)\n\n```\n[home](README.md)\n```\n"), links)
+    assert twin == "[home](index.md)\n\n```\n[home](README.md)\n```\n"

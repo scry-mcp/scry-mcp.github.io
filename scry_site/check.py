@@ -26,6 +26,9 @@ def check(site: Path) -> int:
     if not pages:
         raise Invalid(f"no page under {site}")
     ids = {rel: set(_ID.findall(text)) for rel, text in pages.items()}
+    # Compared by exact spelling: `is_file` on a case-insensitive disk finds `Guide.html` as
+    # `guide.html`, and Pages, on a case-sensitive one, does not.
+    held = {p.relative_to(site).as_posix() for p in site.rglob("*") if p.is_file()}
     misses: list[str] = []
     checked = 0
     for rel, text in pages.items():
@@ -39,7 +42,7 @@ def check(site: Path) -> int:
                 if path else rel
             if url.startswith("/") or target == ".." or target.startswith("../"):
                 misses.append(f"{rel}: {url} (outside the site)")
-            elif not (site / target).is_file():
+            elif target not in held:
                 misses.append(f"{rel}: {url} (no file)")
             elif frag and target in ids and unquote(frag) not in ids[target]:
                 misses.append(f"{rel}: {url} (no id '{frag}')")

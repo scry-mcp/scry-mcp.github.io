@@ -17,7 +17,7 @@ import tempfile
 from importlib import resources
 from pathlib import Path
 
-from scry_site import render
+from scry_site import render, sources
 from scry_site.check import check
 from scry_site.sources import (
     GROUPS,
@@ -34,6 +34,7 @@ from scry_site.sources import (
     section,
 )
 
+TAGLINE = "MCP servers that hold MAME or DOSBox-X open and answer by name."
 # The landing's console: which demo, from which call, how many calls.
 FLOW = ("dosbox-x", "bricks", "symbols_load", 3)
 _KEY = re.compile(r"\{\{([a-z_]+)\}\}")
@@ -56,6 +57,41 @@ def credits_line(core: Repo) -> str:
 
 def inline(md: str) -> str:
     return render.markdown(md).strip().removeprefix("<p>").removesuffix("</p>")
+
+
+def describe(page: Page) -> str:
+    """The page's first paragraph as one line of at most 200 characters, else its title."""
+    md, hidden = page.markdown, sources.masked(page.markdown)
+    for m in re.finditer(r"(?:^[^\n]*\S[^\n]*(?:\n|\Z))+", hidden, re.M):
+        block = md[m.start():m.end()]
+        if block[0].isalpha() or block[0] in "*`_":
+            text = render.plain(block)
+            if len(text) <= 200:
+                return text
+            return text[:200].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return page.title
+
+
+def is_virtual(page: Page) -> bool:
+    """A page made from part of its source (the getting-started page), which has no twin."""
+    return page.out.endswith("getting-started.html")
+
+
+def llms_txt(rs: list[Repo], pages: list[Page]) -> str:
+    """The pages that have a markdown twin, by repository and group, as llmstxt.org lays out."""
+    lines = ["# Scry", "", f"> {TAGLINE}", ""]
+    order = {g: i for i, (g, _) in enumerate((*GROUPS, ("core", "")))}
+    for r in rs:
+        ps = sorted((p for p in pages if p.repo is r and not is_virtual(p)),
+                    key=lambda p: (order[p.group], p.order))
+        lines += [f"## {r.label}", ""]
+        lines += [f"- [{p.title}]({twin_path(p)}): {describe(p)}" for p in ps]
+        lines.append("")
+    return "\n".join(lines)
+
+
+def twin_path(page: Page) -> str:
+    return page.out.removesuffix(".html") + ".md"
 
 
 def sidebar(pages: list[Page], current: Page) -> str:
@@ -151,11 +187,14 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
     links = render.Links({(p.repo.key, p.src): p.out for p in pages
                           if not p.out.endswith("getting-started.html")}, files)
     credits = credits_line(next(r for r in rs if r.key == "core"))
-    rendered = {}
+    rendered: dict[str, str] = {}
+    twins: dict[str, str] = {}
     for p in pages:
         body = render.rewrite(render.markdown(p.markdown), p, links,
                               virtual=p.out.endswith("getting-started.html"))
-        rendered[p.out] = shell(title=f"{p.title} · Scry", description=f"Scry: {p.title}",
+        if not is_virtual(p):
+            twins[twin_path(p)] = render.twin(p, links)
+        rendered[p.out] = shell(title=f"{p.title} · Scry", description=describe(p),
                                 out=p.out, main=body, credits=credits, side=sidebar(pages, p),
                                 right=render.toc(body))
     if links.broken:
@@ -163,9 +202,9 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
                       + "\n  ".join(sorted(links.broken)))
     rendered["index.html"] = shell(
         title="Scry: drive and debug the program inside the emulator",
-        description="MCP servers that hold MAME or DOSBox-X open and answer by name.",
+        description=TAGLINE,
         out="index.html", main=landing(rs, pages), credits=credits, kind="landing")
-    for rel, text in rendered.items():
+    for rel, text in {**rendered, **twins, "llms.txt": llms_txt(rs, pages)}.items():
         dest = into / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8")
