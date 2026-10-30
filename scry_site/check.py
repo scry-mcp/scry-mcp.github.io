@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import posixpath
 import re
+from collections import Counter
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -29,7 +30,8 @@ def check(site: Path) -> int:
     # Compared by exact spelling: `is_file` on a case-insensitive disk finds `Guide.html` as
     # `guide.html`, and Pages, on a case-sensitive one, does not.
     held = {p.relative_to(site).as_posix() for p in site.rglob("*") if p.is_file()}
-    misses: list[str] = []
+    misses = [f"{rel}: the id '{i}' is held twice" for rel, text in sorted(pages.items())
+              for i, n in Counter(_ID.findall(text)).items() if n > 1]
     checked = 0
     for rel, text in pages.items():
         for a, b in _REF.findall(text):

@@ -414,6 +414,27 @@ def test_every_source_page_has_a_markdown_twin_and_llms_txt_lists_them(repos: Pa
     assert "getting-started" not in llms
 
 
+def test_a_triple_backtick_span_that_opens_a_paragraph_is_no_fence() -> None:
+    md = "```inline``` opens a paragraph\n\n# Real title\n\n**The lede.**\n"
+    assert sources.title_of(md, "x") == "Real title"
+    assert sources.lede(md, "x") == "The lede."
+
+
+def test_a_line_break_character_that_is_not_a_newline_ends_no_line() -> None:
+    md = "# T\n\nword\x0b```x\n\n## Section\nbody\n"
+    assert sources.under_heading(md, "Section", "x") == "body\n"
+
+
+def test_a_fence_in_a_list_item_is_code_however_far_it_is_indented() -> None:
+    md = "- item\n\n    ```\n    [home](README.md)\n    ```\n\n[home](README.md)\n"
+    assert sources.masked(md).count("[home](README.md)") == 1
+
+
+def test_a_bullet_list_is_no_description_and_emphasis_is() -> None:
+    assert build.describe(_page("# Title\n\n* only a list\n")) == "Title"
+    assert build.describe(_page("# Title\n\n*Emphasised* words\n")) == "Emphasised words"
+
+
 def test_a_page_describes_itself_by_its_first_paragraph(repos: Path, tmp_path: Path) -> None:
     build.build(repos, tmp_path / "site")
     read = (tmp_path / "site/dosbox-x/demos/bricks/index.html").read_text()
@@ -442,6 +463,45 @@ def test_a_link_in_a_fenced_block_of_a_twin_is_code_and_stays_as_written() -> No
     assert twin == "[home](index.md)\n\n```\n[home](README.md)\n```\n"
 
 
+def _twin(markdown: str, tracked: tuple[str, ...] = ("README.md", "REFERENCE.md",
+                                                   "screen.png")) -> str:
+    links = render.Links({("mame", "README.md"): "mame/index.html",
+                          ("mame", "REFERENCE.md"): "mame/reference/index.html"},
+                         {"mame": set(tracked)})
+    out = render.twin(_page(markdown), links)
+    assert links.broken == []
+    return out
+
+
+@pytest.mark.parametrize(("source", "want"), [
+    ("[![a](screen.png)](REFERENCE.md)", "[![a](screen.png)](reference/index.md)"),
+    ("[home](README.md 'the home')", "[home](index.md 'the home')"),
+    ("[home](README.md (the home))", "[home](index.md (the home))"),
+    ("[home](<README.md> \"t\")", "[home](<index.md> \"t\")"),
+    ("[home](\n  README.md\n)", "[home](\n  index.md\n)"),
+    ("`[home](README.md)` and [home](README.md)", "`[home](README.md)` and [home](index.md)"),
+    ("``a ` [home](README.md) ``", "``a ` [home](README.md) ``"),
+    ("[home][h]\n\n[h]: README.md\n", "[home][h]\n\n[h]: index.md\n"),
+    ("[h]: <README.md> 'the home'\n\n[home][h]", "[h]: <index.md> 'the home'\n\n[home][h]"),
+    ("<https://example.org/a> and [x](https://example.org/b)",
+     "<https://example.org/a> and [x](https://example.org/b)"),
+    ("[home]\\(README.md)", "[home]\\(README.md)"),
+])
+def test_a_twin_resolves_each_link_shape_markdown_reads_and_no_other(source: str,
+                                                                    want: str) -> None:
+    assert _twin(source) == want
+
+
+def test_a_destination_with_parentheses_is_one_destination() -> None:
+    out = _twin("[x](REFERENCE_(1).md)", ("README.md", "REFERENCE_(1).md"))
+    assert out == "[x](https://github.com/scry-mcp/scry-mame/blob/main/REFERENCE_%281%29.md)"
+
+
+def test_a_twin_that_cannot_account_for_every_link_markdown_reads_is_invalid() -> None:
+    with pytest.raises(Invalid, match=r"mame/README.md.*links"):
+        _twin("> [home](README.md)\n>\n> [h]: README.md\n")
+
+
 def test_an_install_line_that_hands_a_command_to_uv_folds_after_the_double_dash() -> None:
     long = 'claude mcp add dosbox-x -s user -- uv run --directory "$PWD" scry-dosbox-x'
     assert build.fold(long) == ('claude mcp add dosbox-x -s user -- \\\n'
@@ -449,6 +509,11 @@ def test_an_install_line_that_hands_a_command_to_uv_folds_after_the_double_dash(
     assert build.fold("git clone https://github.com/scry-mcp/scry-mame\ncd scry-mame") == (
         "git clone https://github.com/scry-mcp/scry-mame\ncd scry-mame")
     assert build.fold(f"cd x\n{long}").splitlines()[0] == "cd x"
+
+
+def test_a_comment_line_in_an_install_block_is_not_folded() -> None:
+    line = "# register it -- uv run --directory \"$PWD\" scry-dosbox-x"
+    assert build.fold(line) == line
 
 
 def test_a_demo_both_servers_run_is_one_entry_that_links_each(repos: Path, tmp_path: Path) -> None:
@@ -468,3 +533,21 @@ def test_a_page_with_a_page_list_links_to_it_from_the_top(repos: Path, tmp_path:
     page = (tmp_path / "site" / "mame/reference/read.html").read_text()
     assert 'href="#pages"' in page and 'id="pages"' in page
     assert 'href="#pages"' not in (tmp_path / "site" / "index.html").read_text()
+
+
+def test_two_demos_of_one_server_whose_titles_share_a_prefix_are_two_entries(
+        repos: Path, tmp_path: Path) -> None:
+    for demo, title in (("a", "Deluxe Paint: first"), ("b", "Deluxe Paint: second")):
+        track(repos / "scry-mame", f"demos/{demo}/README.md", f"# {title}\n\n![s](screen.png)\n")
+        track(repos / "scry-mame", f"demos/{demo}/screen.png", b"\x89PNG\r\n")
+    build.build(repos, tmp_path / "site")
+    landing = (tmp_path / "site" / "index.html").read_text()
+    assert landing.count("<b>Deluxe Paint</b>") == 2
+    assert "MAME · MAME" not in landing
+
+
+def test_check_refuses_an_id_a_page_holds_twice(tmp_path: Path) -> None:
+    (tmp_path / "a.html").write_text('<h2 id="pages">Pages</h2><nav id="pages"></nav>'
+                                     '<a href="a.html#pages">x</a>')
+    with pytest.raises(Invalid, match=r"a.html.*'pages'.*twice"):
+        check(tmp_path)

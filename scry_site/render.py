@@ -5,13 +5,16 @@ from __future__ import annotations
 import html
 import posixpath
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from urllib.parse import quote, unquote
 
 from markdown_it import MarkdownIt
+from markdown_it.common.utils import normalizeReference
+from markdown_it.helpers import parseLinkDestination
 from mdit_py_plugins.anchors import anchors_plugin
 
-from scry_site.sources import GITHUB, Page, masked
+from scry_site.sources import GITHUB, Invalid, Page, masked_inline
 
 _MD = MarkdownIt("gfm-like", {"linkify": False}).use(anchors_plugin, max_level=6)
 # Raw HTML in markdown may quote an attribute either way; markdown-it's own output uses double.
@@ -37,8 +40,8 @@ def markdown(md: str) -> str:
 
 #: Files a link points at that the site serves itself, so a browser plays them in place.
 MEDIA = (".wav",)
-# `[text](url)` and `![alt](url)`, an optional title kept apart.
-_MD_LINK = re.compile(r"(!?)(\[[^\]]*\]\()([^)\s]+)(\s+\"[^\"]*\")?\)")
+# A reference definition's label, at the start of a line.
+_DEFINITION = re.compile(r"^ {0,3}\[((?:[^\]\\]|\\.)+)\]:[ \t]*\n?[ \t]*", re.M)
 
 
 def resolve(url: str, page: Page, links: Links, *, virtual: bool = False, copy: bool = False,
@@ -90,19 +93,68 @@ def rewrite(body: str, page: Page, links: Links, virtual: bool = False) -> str:
     return _LINK.sub(fix, body)
 
 
+def _inline_destinations(text: str) -> Iterator[tuple[int, int, str, bool]]:
+    """Where each `[label](destination ...)` and `![alt](destination ...)` of `text` keeps its
+    destination: start, end, the destination as markdown reads it, and whether it is an image.
+    Brackets nest (a linked image), and the destination is read by markdown-it's own parser, so
+    parentheses, `<...>` and a following title mean what they mean there."""
+    opened: list[bool] = []
+    bang, i = -2, 0
+    while i < len(text):
+        c = text[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "!":
+            bang = i
+        elif c == "[":
+            opened.append(bang == i - 1)
+        elif c == "]" and opened:
+            image = opened.pop()
+            if text.startswith("(", i + 1):
+                start = i + 2
+                while start < len(text) and text[start] in " \t\n":
+                    start += 1
+                found = parseLinkDestination(text, start, len(text))
+                if found.ok and found.str:
+                    yield start, found.pos, found.str, image
+        i += 1
+
+
+def _definition_destinations(text: str) -> Iterator[tuple[int, int, str, str]]:
+    """The same for each `[label]: destination` line: start, end, destination and label."""
+    for m in _DEFINITION.finditer(text):
+        found = parseLinkDestination(text, m.end(), len(text))
+        if found.ok and found.str:
+            yield m.end(), found.pos, found.str, m[1]
+
+
 def twin(page: Page, links: Links) -> str:
     """`page`'s own markdown with its links resolved onto the site's markdown pages, so a model
-    that reads one page can follow the others. Links inside a fenced block are code."""
-    hidden = masked(page.markdown)
+    that reads one page can follow the others. Code, fenced, indented or in a span, is as written.
 
-    def fix(m: re.Match[str]) -> str:
-        url = m[3]
-        if hidden[m.start(3):m.end(3)] != url:
-            return m[0]
-        new = resolve(url, page, links, copy=bool(m[1]), ext=".md")
-        return m[0] if new is None else f"{m[1]}{m[2]}{new}{m[4] or ''})"
-
-    return _MD_LINK.sub(fix, page.markdown)
+    The scan is checked against markdown-it's own reading of the page: a link it counts that the
+    scan did not find is `Invalid`, never a link left unresolved."""
+    md = page.markdown
+    hidden = masked_inline(md)
+    inline = list(_inline_destinations(hidden))
+    defined = list(_definition_destinations(hidden))
+    env: dict[str, dict[str, object]] = {}
+    read = sum(1 for t in _MD.parse(md, env) if t.children for c in t.children
+               if c.type in ("link_open", "image") and c.markup not in ("autolink", "linkify"))
+    labels = {normalizeReference(label) for *_, label in defined}
+    refs = len(env.get("references", {}))
+    if len(labels) != refs or len(inline) > read or (not refs and len(inline) != read):
+        raise Invalid(f"{page.repo.name}/{page.src}: the twin finds {len(inline)} inline links "
+                      f"and {len(labels)} definitions, markdown-it reads {read} links and "
+                      f"{refs} definitions")
+    edits = [*inline, *((a, b, url, False) for a, b, url, _ in defined)]
+    for a, b, url, image in sorted(edits, reverse=True):
+        new = resolve(url, page, links, copy=image, ext=".md")
+        if new is not None:
+            md = md[:a] + (f"<{new}>" if md[a] == "<" or re.search(r"[\s()]", new) else new) \
+                + md[b:]
+    return md
 
 
 def plain(md: str) -> str:

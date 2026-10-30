@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import functools
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from markdown_it import MarkdownIt
 
 GITHUB = "https://github.com/scry-mcp"
 NAME = r"[a-z0-9_-]+"
@@ -65,24 +68,33 @@ def read(repo: Repo, src: str) -> str:
         raise Invalid(f"cannot read {repo.name}/{src}: {e}") from e
 
 
+_BLOCKS = MarkdownIt("commonmark")
+# The lines markdown-it counts: it ends one at "\n", "\r\n" or a lone "\r", and nothing else.
+_LINE = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+")
+# A code span: a backtick run, then the next run of the same length, within one paragraph.
+_SPAN = re.compile(r"(?<![\\`])(`+)(?!`)(?:(?!\n[ \t]*\n).)*?(?<!`)\1(?!`)", re.S)
+
+
+def _blank(text: str) -> str:
+    return re.sub(r"[^\r\n]", " ", text)
+
+
+@functools.cache
 def masked(md: str) -> str:
-    """`md` with every fenced code block, fences included, blanked to spaces, same length: a
-    `# ` or `**` inside a fence is code, never a heading or a lede."""
-    out, fence = [], ""
-    for line in md.splitlines(keepends=True):
-        m = re.match(r" {0,3}(`{3,}|~{3,})", line)
-        if fence:
-            closes = m and m[1][0] == fence[0] and len(m[1]) >= len(fence) \
-                and line.strip() == m[1]
-            if closes:
-                fence = ""
-            out.append(re.sub(r"[^\n]", " ", line))
-        elif m:
-            fence = m[1]
-            out.append(re.sub(r"[^\n]", " ", line))
-        else:
-            out.append(line)
-    return "".join(out)
+    """`md` with every fenced or indented code block, fences included, blanked to spaces, same
+    length: a `# ` or `**` inside code is never a heading or a lede, and a link in it is not one.
+    Which lines are code is markdown-it's own answer, so a fence in a list item counts."""
+    lines = _LINE.findall(md)
+    for token in _BLOCKS.parse(md):
+        if token.type in ("fence", "code_block") and token.map:
+            for i in range(*token.map):
+                lines[i] = _blank(lines[i])
+    return "".join(lines)
+
+
+def masked_inline(md: str) -> str:
+    """`masked(md)` with the code spans blanked too."""
+    return _SPAN.sub(lambda m: _blank(m[0]), masked(md))
 
 
 def title_of(md: str, where: str) -> str:

@@ -48,7 +48,7 @@ def template(name: str, **fill: str) -> str:
 
 def fold(sh: str) -> str:
     """Break a line that hands a command to uv after its `--`, so every card's lines fit alike."""
-    return re.sub(r"^(.* -- )(uv run .*)$", r"\1\\\n  \2", sh, flags=re.M)
+    return re.sub(r"^(?!\s*#)(.* -- )(uv run .*)$", r"\1\\\n  \2", sh, flags=re.M)
 
 
 def credits_line(core: Repo) -> str:
@@ -69,7 +69,7 @@ def describe(page: Page) -> str:
     md, hidden = page.markdown, sources.masked(page.markdown)
     for m in re.finditer(r"(?:^[^\n]*\S[^\n]*(?:\n|\Z))+", hidden, re.M):
         block = md[m.start():m.end()]
-        if block[0].isalpha() or block[0] in "*`_":
+        if block[0].isalpha() or block[0] in "`_" or re.match(r"\*\S", block):
             text = render.plain(block)
             if len(text) <= 200:
                 return text
@@ -164,9 +164,10 @@ def landing(rs: list[Repo], pages: list[Page]) -> str:
     by_demo: dict[str, list[Page]] = {}
     for p in pages:
         if p.group == "demos":
-            by_demo.setdefault(p.label, []).append(p)
+            by_demo.setdefault(posixpath.basename(posixpath.dirname(p.src)), []).append(p)
     shots = []
-    for label, ps in by_demo.items():
+    for ps in by_demo.values():
+        label = ps[0].label
         img = posixpath.join(posixpath.dirname(ps[0].out), "screen.png")
         servers = " · ".join(f'<a href="{p.out}">{p.repo.label}</a>' for p in ps)
         shots.append(f'<div class="shot"><a href="{ps[0].out}" aria-hidden="true" tabindex="-1">'
