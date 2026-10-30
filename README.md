@@ -57,8 +57,8 @@ And it lists every one of these:
   on GitHub.
 - `scry_site/check.py` follows every link inside the built site.
 - `scry_site/build.py` puts it together: the getting-started pages, the landing (one entry per
-  demo, linking each server that runs it; install lines folded after `--`; the console's paths
-  as `~`-led paths, wrapped), the page list (a "Pages" link in the header on a phone),
+  demo, linking each server that runs it; install lines folded after `--`; the console wrapping a long
+  line instead of scrolling it), the page list (a "Pages" line under the header on a phone),
   a markdown twin of every page that has a source, with its links pointed at the other twins, `llms.txt` listing
   them, and the swap into `--out`.
 - `scry_site/templates/` and `scry_site/static/` are the layout and the look; the fonts are

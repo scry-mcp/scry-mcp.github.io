@@ -51,11 +51,6 @@ def fold(sh: str) -> str:
     return re.sub(r"^(.* -- )(uv run .*)$", r"\1\\\n  \2", sh, flags=re.M)
 
 
-def from_home(text: str, repo_name: str) -> str:
-    """The placeholder path into the repository as the `~`-led path the servers accept."""
-    return re.sub(rf'(?<![\w/])/path/to/{re.escape(repo_name)}/', f"~/{repo_name}/", text)
-
-
 def credits_line(core: Repo) -> str:
     """The credits line every Scry README closes with, rendered once for every page's footer."""
     body = under_heading(read(core, "README.md"), "Credits", "scry-core/README.md").strip()
@@ -179,8 +174,7 @@ def landing(rs: list[Repo], pages: list[Page]) -> str:
                      f"<b>{html.escape(label)}</b><small>{servers}</small></div>")
     key, demo, first, calls = FLOW
     server = next(r for r in rs if r.key == key)
-    console = from_home(flow(read(server, "README.md"), demo, first, calls,
-                             f"{server.name}/README.md"), server.name)
+    console = flow(read(server, "README.md"), demo, first, calls, f"{server.name}/README.md")
     return template("landing.html", flow_label=f"the {demo} demo, on {server.label}",
                     flow=html.escape(console), cards="".join(cards), demos="".join(shots))
 

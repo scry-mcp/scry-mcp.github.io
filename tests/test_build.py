@@ -451,16 +451,6 @@ def test_an_install_line_that_hands_a_command_to_uv_folds_after_the_double_dash(
     assert build.fold(f"cd x\n{long}").splitlines()[0] == "cd x"
 
 
-def test_the_console_names_a_path_the_server_accepts() -> None:
-    said = 'symbols_load(path="/path/to/scry-dosbox-x/demos/bricks/bricks.sym")'
-    assert build.from_home(said, "scry-dosbox-x") == (
-        'symbols_load(path="~/scry-dosbox-x/demos/bricks/bricks.sym")')
-    other = 'path="/path/to/scry-mame/x"'
-    assert build.from_home(other, "scry-dosbox-x") == other
-    assert build.from_home('path="/other/path/to/scry-dosbox-x/x"', "scry-dosbox-x") == (
-        'path="/other/path/to/scry-dosbox-x/x"')
-
-
 def test_a_demo_both_servers_run_is_one_entry_that_links_each(repos: Path, tmp_path: Path) -> None:
     for name in ("scry-mame", "scry-dosbox-x"):
         track(repos / name, "demos/lineup/README.md", "# LineUp: a demo\n\n![s](screen.png)\n")
