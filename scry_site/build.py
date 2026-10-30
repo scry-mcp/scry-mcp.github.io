@@ -51,9 +51,9 @@ def fold(sh: str) -> str:
     return re.sub(r"^(.* -- )(uv run .*)$", r"\1\\\n  \2", sh, flags=re.M)
 
 
-def from_root(text: str, repo_name: str) -> str:
-    """A placeholder path into the repository, as the path a reader types from its root."""
-    return text.replace(f"/path/to/{repo_name}/", "")
+def from_home(text: str, repo_name: str) -> str:
+    """The placeholder path into the repository as the `~`-led path the servers accept."""
+    return re.sub(rf'(?<![\w/])/path/to/{re.escape(repo_name)}/', f"~/{repo_name}/", text)
 
 
 def credits_line(core: Repo) -> str:
@@ -174,12 +174,12 @@ def landing(rs: list[Repo], pages: list[Page]) -> str:
     for label, ps in by_demo.items():
         img = posixpath.join(posixpath.dirname(ps[0].out), "screen.png")
         servers = " · ".join(f'<a href="{p.out}">{p.repo.label}</a>' for p in ps)
-        shots.append(f'<div class="shot"><a href="{ps[0].out}"><span class="crt"><img src="{img}" '
-                     f'alt="" loading="lazy"></span></a>'
+        shots.append(f'<div class="shot"><a href="{ps[0].out}" aria-hidden="true" tabindex="-1">'
+                     f'<span class="crt"><img src="{img}" alt="" loading="lazy"></span></a>'
                      f"<b>{html.escape(label)}</b><small>{servers}</small></div>")
     key, demo, first, calls = FLOW
     server = next(r for r in rs if r.key == key)
-    console = from_root(flow(read(server, "README.md"), demo, first, calls,
+    console = from_home(flow(read(server, "README.md"), demo, first, calls,
                              f"{server.name}/README.md"), server.name)
     return template("landing.html", flow_label=f"the {demo} demo, on {server.label}",
                     flow=html.escape(console), cards="".join(cards), demos="".join(shots))
