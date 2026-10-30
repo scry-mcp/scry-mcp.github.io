@@ -46,6 +46,16 @@ def template(name: str, **fill: str) -> str:
     return _KEY.sub(lambda m: fill[m[1]], text)
 
 
+def fold(sh: str) -> str:
+    """Break a line that hands a command to uv after its `--`, so every card's lines fit alike."""
+    return re.sub(r"^(.* -- )(uv run .*)$", r"\1\\\n  \2", sh, flags=re.M)
+
+
+def from_root(text: str, repo_name: str) -> str:
+    """A placeholder path into the repository, as the path a reader types from its root."""
+    return text.replace(f"/path/to/{repo_name}/", "")
+
+
 def credits_line(core: Repo) -> str:
     """The credits line every Scry README closes with, rendered once for every page's footer."""
     body = under_heading(read(core, "README.md"), "Credits", "scry-core/README.md").strip()
@@ -111,14 +121,16 @@ def sidebar(pages: list[Page], current: Page) -> str:
         state = " open" if current.repo is r else ""
         blocks.append(f'<details{state}><summary>{r.label}</summary><ul>{"".join(groups)}</ul>'
                       "</details>")
-    return f'<nav class="side" aria-label="Pages">{"".join(blocks)}</nav>'
+    return f'<nav class="side" id="pages" aria-label="Pages">{"".join(blocks)}</nav>'
 
 
 def shell(*, title: str, description: str, out: str, main: str, credits: str,
           side: str = "", right: str = "", kind: str = "doc") -> str:
     root = posixpath.relpath(".", posixpath.dirname(out)) if posixpath.dirname(out) else "."
+    pages = '<a href="#pages">Pages</a>' if side else ""
     return template("page.html", title=html.escape(title), description=html.escape(description),
-                    root=root, kind=kind, side=side, main=main, right=right, credits=credits)
+                    root=root, kind=kind, side=side, main=main, right=right, credits=credits,
+                    pages=pages)
 
 
 def getting_started(rs: list[Repo]) -> list[Page]:
@@ -149,22 +161,26 @@ def landing(rs: list[Repo], pages: list[Page]) -> str:
         cards.append(
             f'<article class="card"><h3>{r.label}</h3><p>{html.escape(lede(md, where))}</p>'
             f'<p class="needs">{inline(needs)} Runs on {html.escape(platforms(md, where))}.</p>'
-            f'<pre tabindex="0"><code>{html.escape(sh)}</code></pre>'
+            f'<pre tabindex="0"><code>{html.escape(fold(sh))}</code></pre>'
             f'<p class="go"><a href="{r.key}/getting-started.html">Getting started</a> · '
             f'<a href="{r.key}/index.html">The server</a> · '
             f'<a href="{r.key}/reference/index.html">Reference</a> · '
             f'<a href="https://github.com/scry-mcp/{r.name}">GitHub</a></p></article>')
-    shots = []
+    by_demo: dict[str, list[Page]] = {}
     for p in pages:
-        if p.group != "demos":
-            continue
-        img = posixpath.join(posixpath.dirname(p.out), "screen.png")
-        shots.append(f'<a class="shot" href="{p.out}"><span class="crt"><img src="{img}" '
-                     f'alt="" loading="lazy"></span>'
-                     f"<b>{html.escape(p.label)}</b><small>{p.repo.label}</small></a>")
+        if p.group == "demos":
+            by_demo.setdefault(p.label, []).append(p)
+    shots = []
+    for label, ps in by_demo.items():
+        img = posixpath.join(posixpath.dirname(ps[0].out), "screen.png")
+        servers = " · ".join(f'<a href="{p.out}">{p.repo.label}</a>' for p in ps)
+        shots.append(f'<div class="shot"><a href="{ps[0].out}"><span class="crt"><img src="{img}" '
+                     f'alt="" loading="lazy"></span></a>'
+                     f"<b>{html.escape(label)}</b><small>{servers}</small></div>")
     key, demo, first, calls = FLOW
     server = next(r for r in rs if r.key == key)
-    console = flow(read(server, "README.md"), demo, first, calls, f"{server.name}/README.md")
+    console = from_root(flow(read(server, "README.md"), demo, first, calls,
+                             f"{server.name}/README.md"), server.name)
     return template("landing.html", flow_label=f"the {demo} demo, on {server.label}",
                     flow=html.escape(console), cards="".join(cards), demos="".join(shots))
 

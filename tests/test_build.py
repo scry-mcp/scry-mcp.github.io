@@ -440,3 +440,37 @@ def test_a_link_in_a_fenced_block_of_a_twin_is_code_and_stays_as_written() -> No
     links = render.Links({("mame", "README.md"): "mame/index.html"}, {"mame": {"README.md"}})
     twin = render.twin(_page("[home](README.md)\n\n```\n[home](README.md)\n```\n"), links)
     assert twin == "[home](index.md)\n\n```\n[home](README.md)\n```\n"
+
+
+def test_an_install_line_that_hands_a_command_to_uv_folds_after_the_double_dash() -> None:
+    long = 'claude mcp add dosbox-x -s user -- uv run --directory "$PWD" scry-dosbox-x'
+    assert build.fold(long) == ('claude mcp add dosbox-x -s user -- \\\n'
+                                '  uv run --directory "$PWD" scry-dosbox-x')
+    assert build.fold("git clone https://github.com/scry-mcp/scry-mame\ncd scry-mame") == (
+        "git clone https://github.com/scry-mcp/scry-mame\ncd scry-mame")
+    assert build.fold(f"cd x\n{long}").splitlines()[0] == "cd x"
+
+
+def test_the_console_names_a_path_from_the_repository_root() -> None:
+    said = 'symbols_load(path="/path/to/scry-dosbox-x/demos/bricks/bricks.sym")'
+    assert build.from_root(said, "scry-dosbox-x") == 'symbols_load(path="demos/bricks/bricks.sym")'
+    other = 'path="/path/to/scry-mame/x"'
+    assert build.from_root(other, "scry-dosbox-x") == other
+
+
+def test_a_demo_both_servers_run_is_one_card_that_links_each(repos: Path, tmp_path: Path) -> None:
+    for name in ("scry-mame", "scry-dosbox-x"):
+        track(repos / name, "demos/lineup/README.md", "# LineUp: a demo\n\n![s](screen.png)\n")
+        track(repos / name, "demos/lineup/screen.png", b"\x89PNG\r\n")
+    build.build(repos, tmp_path / "site")
+    landing = (tmp_path / "site" / "index.html").read_text()
+    assert landing.count("<b>LineUp</b>") == 1
+    assert 'href="mame/demos/lineup/index.html"' in landing
+    assert 'href="dosbox-x/demos/lineup/index.html"' in landing
+
+
+def test_a_page_with_a_page_list_links_to_it_from_the_top(repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    page = (tmp_path / "site" / "mame/reference/read.html").read_text()
+    assert 'href="#pages"' in page and 'id="pages"' in page
+    assert 'href="#pages"' not in (tmp_path / "site" / "index.html").read_text()

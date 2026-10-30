@@ -55,7 +55,9 @@ And it lists every one of these:
   them) and points every relative link at its page here, at a copy of the picture, or at the file
   on GitHub.
 - `scry_site/check.py` follows every link inside the built site.
-- `scry_site/build.py` puts it together: the getting-started pages, the landing, the page list,
+- `scry_site/build.py` puts it together: the getting-started pages, the landing (one card per
+  demo, linking each server that runs it; install lines folded after `--`; the console's paths
+  from the repository root), the page list (a "Pages" link in the header on a phone),
   a markdown twin of every page with its links pointed at the other twins, `llms.txt` listing
   them, and the swap into `--out`.
 - `scry_site/templates/` and `scry_site/static/` are the layout and the look; the fonts are
