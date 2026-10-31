@@ -71,6 +71,8 @@ def describe(page: Page) -> str:
         block = md[m.start():m.end()]
         if block[0].isalpha() or block[0] in "`_" or re.match(r"\*\S", block):
             text = render.plain(block)
+            if not text:
+                continue
             if len(text) <= 200:
                 return text
             return text[:200].rsplit(" ", 1)[0].rstrip(",;:") + "…"

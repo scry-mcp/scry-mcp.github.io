@@ -450,6 +450,12 @@ def _page(markdown: str) -> sources.Page:
                         title="Title")
 
 
+@pytest.mark.parametrize("rule", ["***", "___"])
+def test_a_thematic_break_is_no_description(rule: str) -> None:
+    assert build.describe(_page(f"# Title\n\n{rule}\n\nThe real paragraph.\n")) \
+        == "The real paragraph."
+
+
 def test_a_long_first_paragraph_is_cut_at_a_word_and_a_page_without_one_has_its_title() -> None:
     words = " ".join(["word"] * 80)
     cut = build.describe(_page(f"# Title\n\n```\ncode\n```\n\n{words}.\n"))
@@ -498,8 +504,40 @@ def test_a_destination_with_parentheses_is_one_destination() -> None:
 
 
 def test_a_twin_that_cannot_account_for_every_link_markdown_reads_is_invalid() -> None:
-    with pytest.raises(Invalid, match=r"mame/README.md.*links"):
+    with pytest.raises(Invalid, match=r"mame/README.md.*destinations"):
         _twin("> [home](README.md)\n>\n> [h]: README.md\n")
+
+
+def test_a_link_markdown_reads_that_the_scan_missed_is_invalid_even_with_a_definition() -> None:
+    with pytest.raises(Invalid, match=r"mame/README.md.*destinations"):
+        _twin("[x]()\n\n[h]: README.md\n")
+
+
+def test_an_empty_destination_is_invalid_and_names_what_differs() -> None:
+    with pytest.raises(Invalid, match=r"destinations markdown reads.*''"):
+        _twin("[x]()\n")
+
+
+def test_a_definition_an_image_uses_resolves_as_an_image() -> None:
+    assert _twin("![x][img]\n\n[img]: screen.png\n") == "![x][img]\n\n[img]: screen.png\n"
+    assert _twin("![img]\n\n[img]: screen.png\n") == "![img]\n\n[img]: screen.png\n"
+    assert _twin("[x][img]\n\n[img]: screen.png\n").endswith(
+        "[img]: https://github.com/scry-mcp/scry-mame/blob/main/screen.png\n")
+
+
+def test_an_indented_line_after_a_definition_is_code_and_is_no_missed_link() -> None:
+    src = "[h]: README.md\n    [home](README.md)\n"
+    assert _twin(src) == "[h]: index.md\n    [home](README.md)\n"
+
+
+def test_a_reference_use_resolves_through_its_definition_only() -> None:
+    assert _twin("[a][h]\n\n[h]: README.md\n") == "[a][h]\n\n[h]: index.md\n"
+
+
+@pytest.mark.parametrize("eol", ["\r\n", "\r"])
+def test_a_twin_reads_a_page_with_dos_or_old_mac_line_ends(eol: str) -> None:
+    src = eol.join(["```", "[home](README.md)", "```", "[home](README.md)", ""])
+    assert _twin(src) == eol.join(["```", "[home](README.md)", "```", "[home](index.md)", ""])
 
 
 def test_an_install_line_that_hands_a_command_to_uv_folds_after_the_double_dash() -> None:

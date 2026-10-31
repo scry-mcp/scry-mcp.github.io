@@ -21,6 +21,8 @@ _MD = MarkdownIt("gfm-like", {"linkify": False}).use(anchors_plugin, max_level=6
 _LINK = re.compile(r"""\b(href|src)=(?:"([^"]*)"|'([^']*)')""")
 _HEADING = re.compile(r'<h([23]) id="([^"]+)"[^>]*>(.*?)</h\1>', re.S)
 _SCHEME = re.compile(r"[a-z][a-z0-9+.-]*:|//", re.I)
+# Marks a reference use among the links markdown-it reads; a real destination never holds NUL.
+_REF = "\0ref:"
 
 
 @dataclass
@@ -129,26 +131,47 @@ def _definition_destinations(text: str) -> Iterator[tuple[int, int, str, str]]:
             yield m.end(), found.pos, found.str, m[1]
 
 
+def _read(md: str, labels: set[str]) -> tuple[list[str], list[tuple[str, bool]], set[str]]:
+    """What markdown-it reads: the inline destinations, the (label, is image) of each reference
+    use, and every label it found a definition for. Each scanned label is given a marker
+    destination first, so a reference use is told from an inline link."""
+    env: dict[str, dict[str, object]] = {
+        "references": {label: {"href": _REF + label, "title": ""} for label in labels}}
+    inline: list[str] = []
+    used: list[tuple[str, bool]] = []
+    for token in _MD.parse(md, env):
+        for c in token.children or []:
+            if c.type not in ("link_open", "image") or c.markup in ("autolink", "linkify"):
+                continue
+            dest = str(c.attrGet("href" if c.type == "link_open" else "src") or "")
+            if dest.startswith(_REF):
+                used.append((dest.removeprefix(_REF), c.type == "image"))
+            else:
+                inline.append(dest)
+    return sorted(inline), used, set(env["references"])
+
+
 def twin(page: Page, links: Links) -> str:
     """`page`'s own markdown with its links resolved onto the site's markdown pages, so a model
     that reads one page can follow the others. Code, fenced, indented or in a span, is as written.
 
-    The scan is checked against markdown-it's own reading of the page: a link it counts that the
-    scan did not find is `Invalid`, never a link left unresolved."""
+    The scan is checked against markdown-it's own reading of the page: an inline destination or a
+    definition it reads that the scan did not find, or the reverse, is `Invalid`, never a link left
+    unresolved."""
     md = page.markdown
     hidden = masked_inline(md)
     inline = list(_inline_destinations(hidden))
     defined = list(_definition_destinations(hidden))
-    env: dict[str, dict[str, object]] = {}
-    read = sum(1 for t in _MD.parse(md, env) if t.children for c in t.children
-               if c.type in ("link_open", "image") and c.markup not in ("autolink", "linkify"))
     labels = {normalizeReference(label) for *_, label in defined}
-    refs = len(env.get("references", {}))
-    if len(labels) != refs or len(inline) > read or (not refs and len(inline) != read):
-        raise Invalid(f"{page.repo.name}/{page.src}: the twin finds {len(inline)} inline links "
-                      f"and {len(labels)} definitions, markdown-it reads {read} links and "
-                      f"{refs} definitions")
-    edits = [*inline, *((a, b, url, False) for a, b, url, _ in defined)]
+    read, used, found = _read(md, labels)
+    scanned = sorted(_MD.normalizeLink(url) for _, _, url, _ in inline)
+    if scanned != read or found != labels:
+        raise Invalid(f"{page.repo.name}/{page.src}: the twin scanned the destinations {scanned} "
+                      f"and the definitions {sorted(labels)}, the destinations markdown reads "
+                      f"are {read} and its definitions {sorted(found)}")
+    images = {label for label, image in used if image}
+    edits = [*inline, *((a, b, url, normalizeReference(label) in images)
+                        for a, b, url, label in defined)]
     for a, b, url, image in sorted(edits, reverse=True):
         new = resolve(url, page, links, copy=image, ext=".md")
         if new is not None:
