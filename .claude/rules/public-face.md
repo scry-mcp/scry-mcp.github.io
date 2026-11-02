@@ -13,12 +13,12 @@ paths:
 
 | layer | files or globs | audience | character | language |
 |---|---|---|---|---|
-| landing | `scry_site/templates/landing.html` | a stranger arriving at the site, deciding in a minute whether Scry is worth installing | captivate: one sentence on what it does, two servers side by side with what they need and their install lines, the demos. Written here: the hero, the section headings, the link labels and the page's title and description (`scry_site/build.py`), and the site's navigation (`templates/page.html`); every word about a server is read out of its own README | English |
+| landing | `scry_site/templates/landing.html` | a stranger arriving at the site, deciding in a minute whether SCRY is worth installing | captivate: one sentence on what it does, two servers side by side with what they need and their install lines, the demos. Written here: the hero, the section headings, the link labels and the page's title and description (`scry_site/build.py`), and the site's navigation (`templates/page.html`); every word about a server is read out of its own README | English |
 | repository front door | `README.md` | somebody changing the site: how it is built, what a build refuses, how it is published | practical and short: the commands, what each proves | English |
 
 ## What is public and what is not
 
-- Public: the two layers above, and the built site, whose pages are the Scry repositories' own
+- Public: the two layers above, and the built site, whose pages are the SCRY repositories' own
   documents under their own profiles.
 - Not public: `.claude/`.
 

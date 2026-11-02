@@ -1,6 +1,6 @@
 # scry-mcp.github.io
 
-The Scry site, built from the Scry repositories' own markdown: each server's front door, its
+The SCRY site, built from the SCRY repositories' own markdown: each server's front door, its
 getting started, its reference and its demos, and scry-core's README. This repository holds the
 layout, the landing page's own wording (its opening, headings and link labels), the navigation,
 and the build. A page's title and its description (its first paragraph) come from its source. Every other word the site shows about a

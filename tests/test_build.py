@@ -408,7 +408,7 @@ def test_every_source_page_has_a_markdown_twin_and_llms_txt_lists_them(repos: Pa
     assert "[Session](reference/index.md#the-session)" in readme
     assert not (site / "mame/getting-started.md").exists()
     llms = (site / "llms.txt").read_text()
-    assert llms.startswith("# Scry\n\n> ")
+    assert llms.startswith("# SCRY\n\n> ")
     assert "- [The Read tools](mame/reference/read.md): " in llms
     assert "## MAME\n" in llms and "## Shared core\n" in llms
     assert "getting-started" not in llms
@@ -438,7 +438,7 @@ def test_a_bullet_list_is_no_description_and_emphasis_is() -> None:
 def test_a_page_describes_itself_by_its_first_paragraph(repos: Path, tmp_path: Path) -> None:
     build.build(repos, tmp_path / "site")
     read = (tmp_path / "site/dosbox-x/demos/bricks/index.html").read_text()
-    assert '<meta name="description" content="Scry: ' not in read
+    assert '<meta name="description" content="SCRY: ' not in read
     core = (tmp_path / "site/core/index.html").read_text()
     assert '<meta name="description" content="Shared.">' in core
     assert ">Shared core</a>" in core and ">Core</a>" not in core

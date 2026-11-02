@@ -1,7 +1,7 @@
 [project]
 name = "scry-site"
 version = "0.1.0"
-description = "The Scry site, generated from the Scry repositories' own markdown"
+description = "The SCRY site, generated from the SCRY repositories' own markdown"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -32,7 +32,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "SIM", "W"]
-# N818 wants `...Error`; the concept is called INVALID across the Scry tools (exit code 3, and
+# N818 wants `...Error`; the concept is called INVALID across the SCRY tools (exit code 3, and
 # the word the programs print), so the class that raises it is `Invalid`.
 ignore = ["N818"]
 

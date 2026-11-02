@@ -1,4 +1,4 @@
-"""Build the Scry site from checkouts of scry-core, scry-mame and scry-dosbox-x.
+"""Build the SCRY site from checkouts of scry-core, scry-mame and scry-dosbox-x.
 
 Prints one JSON line (pages, copied files, internal links followed) and exits 0; or writes
 nothing, prints INVALID with the reason, and exits 3.
@@ -52,7 +52,7 @@ def fold(sh: str) -> str:
 
 
 def credits_line(core: Repo) -> str:
-    """The credits line every Scry README closes with, rendered once for every page's footer."""
+    """The credits line every SCRY README closes with, rendered once for every page's footer."""
     body = under_heading(read(core, "README.md"), "Credits", "scry-core/README.md").strip()
     if "\n" in body or not body.startswith("Developed by Optimiza"):
         raise Invalid("scry-core/README.md: '## Credits' must hold one line, starting "
@@ -86,7 +86,7 @@ def is_virtual(page: Page) -> bool:
 
 def llms_txt(rs: list[Repo], pages: list[Page]) -> str:
     """The pages that have a markdown twin, by repository and group, as llmstxt.org lays out."""
-    lines = ["# Scry", "", f"> {TAGLINE}", ""]
+    lines = ["# SCRY", "", f"> {TAGLINE}", ""]
     order = {g: i for i, (g, _) in enumerate((*GROUPS, ("core", "")))}
     for r in rs:
         ps = sorted((p for p in pages if p.repo is r and not is_virtual(p)),
@@ -207,14 +207,14 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
                               virtual=p.out.endswith("getting-started.html"))
         if not is_virtual(p):
             twins[twin_path(p)] = render.twin(p, links)
-        rendered[p.out] = shell(title=f"{p.title} · Scry", description=describe(p),
+        rendered[p.out] = shell(title=f"{p.title} · SCRY", description=describe(p),
                                 out=p.out, main=body, credits=credits, side=sidebar(pages, p),
                                 right=render.toc(body))
     if links.broken:
         raise Invalid("links in the sources to paths no repository tracks:\n  "
                       + "\n  ".join(sorted(links.broken)))
     rendered["index.html"] = shell(
-        title="Scry: drive and debug the program inside the emulator",
+        title="SCRY: drive and debug the program inside the emulator",
         description=TAGLINE,
         out="index.html", main=landing(rs, pages), credits=credits, kind="landing")
     for rel, text in {**rendered, **twins, "llms.txt": llms_txt(rs, pages)}.items():
