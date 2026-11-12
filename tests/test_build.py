@@ -100,6 +100,7 @@ def server(key: str, label: str, demo: str) -> dict[str, str | bytes]:
             "# The Read tools\n\n## `registers`\n\nSee [start](session.md#start).\n",
         f"demos/{demo}/README.md": f"# {demo.title()}: a demo\n\n![screen](screen.png)\n",
         f"demos/{demo}/screen.png": b"\x89PNG\r\n",
+        f"demos/{demo}/loop.mp4": b"\x00\x00\x00\x18ftypmp42",
     }
 
 
@@ -221,6 +222,13 @@ def test_check_refuses_a_link_whose_case_differs_from_the_file(tmp_path: Path) -
     assert "a.html: Pic.PNG (no file)" in str(e.value)
 
 
+def test_check_follows_a_poster_the_way_it_follows_a_src(tmp_path: Path) -> None:
+    (tmp_path / "a.html").write_text('<video poster="gone.png" src="clip.mp4"></video>')
+    (tmp_path / "clip.mp4").write_bytes(b"mp4")
+    with pytest.raises(Invalid, match=r"a.html: gone.png \(no file\)"):
+        check(tmp_path)
+
+
 def test_check_examining_nothing_is_invalid(tmp_path: Path) -> None:
     with pytest.raises(Invalid, match="no page"):
         check(tmp_path)
@@ -301,6 +309,7 @@ def test_names_with_digits_and_hyphens_are_pages(repos: Path, tmp_path: Path) ->
     dx = repos / "scry-dosbox-x"
     track(dx, "demos/speed-fight/README.md", "# Speed Fight: a demo\n\n![s](screen.png)\n")
     track(dx, "demos/speed-fight/screen.png", b"png")
+    track(dx, "demos/speed-fight/loop.mp4", b"mp4")
     ref = dx / "REFERENCE.md"
     ref.write_text(ref.read_text().replace(
         "<!-- scry-reference:end index -->",
@@ -385,7 +394,8 @@ def test_a_hash_line_inside_a_fence_is_no_heading_and_no_section_edge() -> None:
 def test_a_wav_a_page_links_is_copied_so_the_site_plays_it(repos: Path, tmp_path: Path) -> None:
     git_repo(tmp_path / "wav" / "scry-mame", {
         **server("mame", "MAME", "gridlee"),
-        "demos/gridlee/README.md": "# Gridlee: a demo\n\nHeld to [music.wav](music.wav).\n",
+        "demos/gridlee/README.md": "# Gridlee: a demo\n\n![s](screen.png)\n\n"
+                                   "Held to [music.wav](music.wav).\n",
         "demos/gridlee/music.wav": b"RIFF"})
     git_repo(tmp_path / "wav" / "scry-dosbox-x", server("dosbox-x", "DOSBox-X", "bricks"))
     git_repo(tmp_path / "wav" / "scry-core", {
@@ -558,12 +568,63 @@ def test_a_demo_both_servers_run_is_one_entry_that_links_each(repos: Path, tmp_p
     for name in ("scry-mame", "scry-dosbox-x"):
         track(repos / name, "demos/lineup/README.md", "# LineUp: a demo\n\n![s](screen.png)\n")
         track(repos / name, "demos/lineup/screen.png", b"\x89PNG\r\n")
+        track(repos / name, "demos/lineup/loop.mp4", b"mp4")
     build.build(repos, tmp_path / "site")
     landing = (tmp_path / "site" / "index.html").read_text()
     assert landing.count("<b>LineUp</b>") == 1
     assert '<a href="mame/demos/lineup/index.html" aria-hidden="true" tabindex="-1">' in landing
     assert 'href="mame/demos/lineup/index.html"' in landing
     assert 'href="dosbox-x/demos/lineup/index.html"' in landing
+
+
+def test_a_demo_page_plays_its_loop_with_the_still_as_its_poster(repos: Path,
+                                                                 tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    page = (tmp_path / "site/mame/demos/gridlee/index.html").read_text()
+    assert '<figure class="screen"><video src="loop.mp4" poster="screen.png" autoplay muted loop ' \
+           'playsinline preload="metadata" role="img" aria-label="screen"></video>' \
+           '<img src="screen.png" alt="screen" /></figure>' in page
+    assert "<p><img" not in page
+    assert (tmp_path / "site/mame/demos/gridlee/loop.mp4").is_file()
+
+
+def test_a_still_that_carries_a_title_still_opens_its_page(repos: Path, tmp_path: Path) -> None:
+    readme = repos / "scry-mame/demos/gridlee/README.md"
+    readme.write_text(readme.read_text().replace("![screen](screen.png)",
+                                                 '![screen](screen.png "In play")'))
+    build.build(repos, tmp_path / "site")
+    page = (tmp_path / "site/mame/demos/gridlee/index.html").read_text()
+    assert '<figure class="screen">' in page and 'aria-label="screen"' in page
+    assert "In play" not in page
+
+
+def test_the_landing_card_plays_the_loop_and_keeps_the_still_behind_it(repos: Path,
+                                                                       tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    landing = (tmp_path / "site/index.html").read_text()
+    assert '<span class="crt"><video src="dosbox-x/demos/bricks/loop.mp4" ' \
+           'poster="dosbox-x/demos/bricks/screen.png" autoplay muted loop playsinline ' \
+           'preload="metadata"></video>' in landing
+    assert '<span class="crt"><video src="dosbox-x/demos/bricks/loop.mp4" ' \
+           'poster="dosbox-x/demos/bricks/screen.png" autoplay muted loop playsinline ' \
+           'preload="metadata"></video><img src="dosbox-x/demos/bricks/screen.png" alt="" ' \
+           'loading="lazy"></span>' in landing
+
+
+def test_a_loop_that_is_not_tracked_is_invalid(repos: Path, tmp_path: Path) -> None:
+    subprocess.run(["git", "-C", str(repos / "scry-mame"), "rm", "-q", "--cached",
+                    "demos/gridlee/loop.mp4"], check=True)
+    with pytest.raises(Invalid, match=r"mame: demos/gridlee/loop\.mp4 is not tracked"):
+        build.build(repos, tmp_path / "site")
+    assert not (tmp_path / "site").exists()
+
+
+def test_a_demo_page_without_its_still_alone_is_invalid(repos: Path, tmp_path: Path) -> None:
+    readme = repos / "scry-mame/demos/gridlee/README.md"
+    readme.write_text(readme.read_text().replace("![screen](screen.png)",
+                                                 "![screen](screen.png) and a sentence"))
+    with pytest.raises(Invalid, match=r"scry-mame/demos/gridlee/README\.md: .*found 0"):
+        build.build(repos, tmp_path / "site")
 
 
 def test_a_page_with_a_page_list_links_to_it_from_the_top(repos: Path, tmp_path: Path) -> None:
@@ -578,6 +639,7 @@ def test_two_demos_of_one_server_whose_titles_share_a_prefix_are_two_entries(
     for demo, title in (("a", "Deluxe Paint: first"), ("b", "Deluxe Paint: second")):
         track(repos / "scry-mame", f"demos/{demo}/README.md", f"# {title}\n\n![s](screen.png)\n")
         track(repos / "scry-mame", f"demos/{demo}/screen.png", b"\x89PNG\r\n")
+        track(repos / "scry-mame", f"demos/{demo}/loop.mp4", b"mp4")
     build.build(repos, tmp_path / "site")
     landing = (tmp_path / "site" / "index.html").read_text()
     assert landing.count("<b>Deluxe Paint</b>") == 2

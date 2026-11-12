@@ -38,6 +38,13 @@ TAGLINE = "MCP servers that hold MAME or DOSBox-X open and answer by name."
 # The landing's console: which demo, from which call, how many calls.
 FLOW = ("dosbox-x", "bricks", "symbols_load", 3)
 _KEY = re.compile(r"\{\{([a-z_]+)\}\}")
+#: A demo's still, and the loop recorded after it: what every demo page carries beside its README.
+STILL, LOOP = "screen.png", "loop.mp4"
+DEMO_MEDIA = (STILL, LOOP)
+#: A demo page's still, alone in its paragraph: where its loop plays. Any other attribute the
+#: source gives the picture (a title, a size) comes along, and its `alt` is read wherever it sits.
+_STILL = re.compile(rf'<p><img [^>]*src="{re.escape(STILL)}"[^>]*></p>')
+_ALT = re.compile(r'alt="([^"]*)"')
 
 
 def template(name: str, **fill: str) -> str:
@@ -82,6 +89,24 @@ def describe(page: Page) -> str:
 def is_virtual(page: Page) -> bool:
     """A page made from part of its source (the getting-started page), which has no twin."""
     return page.out.endswith("getting-started.html")
+
+
+def playing(body: str, where: str) -> str:
+    """`body` with the demo's still replaced by its loop: the still is the video's poster and,
+    under `prefers-reduced-motion`, the picture shown in the video's place. The README's own
+    words name both."""
+    def fill(m: re.Match[str]) -> str:
+        found = _ALT.search(m[0])
+        alt = found[1] if found else ""
+        return (f'<figure class="screen">'
+                f'<video src="{LOOP}" poster="{STILL}" autoplay muted loop playsinline '
+                f'preload="metadata" role="img" aria-label="{alt}"></video>'
+                f'<img src="{STILL}" alt="{alt}" /></figure>')
+    body, found = _STILL.subn(fill, body)
+    if found != 1:
+        raise Invalid(f"{where}: the page shows its still, alone in a paragraph, exactly once "
+                      f"(found {found}), and that is where the demo's loop plays")
+    return body
 
 
 def llms_txt(rs: list[Repo], pages: list[Page]) -> str:
@@ -170,10 +195,13 @@ def landing(rs: list[Repo], pages: list[Page]) -> str:
     shots = []
     for ps in by_demo.values():
         label = ps[0].label
-        img = posixpath.join(posixpath.dirname(ps[0].out), "screen.png")
+        here = posixpath.dirname(ps[0].out)
+        img, loop = posixpath.join(here, STILL), posixpath.join(here, LOOP)
         servers = " · ".join(f'<a href="{p.out}">{p.repo.label}</a>' for p in ps)
         shots.append(f'<div class="shot"><a href="{ps[0].out}" aria-hidden="true" tabindex="-1">'
-                     f'<span class="crt"><img src="{img}" alt="" loading="lazy"></span></a>'
+                     f'<span class="crt"><video src="{loop}" poster="{img}" autoplay muted loop '
+                     f'playsinline preload="metadata"></video>'
+                     f'<img src="{img}" alt="" loading="lazy"></span></a>'
                      f"<b>{html.escape(label)}</b><small>{servers}</small></div>")
     key, demo, first, calls = FLOW
     server = next(r for r in rs if r.key == key)
@@ -205,6 +233,8 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
     for p in pages:
         body = render.rewrite(render.markdown(p.markdown), p, links,
                               virtual=p.out.endswith("getting-started.html"))
+        if p.group == "demos":
+            body = playing(body, f"{p.repo.name}/{p.src}")
         if not is_virtual(p):
             twins[twin_path(p)] = render.twin(p, links)
         rendered[p.out] = shell(title=f"{p.title} · SCRY", description=describe(p),
@@ -222,13 +252,13 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8")
     roots = {r.key: r.root for r in rs}
-    screens = {(p.repo.key, posixpath.join(posixpath.dirname(p.src), "screen.png")):
-               posixpath.join(posixpath.dirname(p.out), "screen.png")
-               for p in pages if p.group == "demos"}
-    for (key, src), rel in {**links.copies, **screens}.items():
+    media = {(p.repo.key, posixpath.join(posixpath.dirname(p.src), name)):
+             posixpath.join(posixpath.dirname(p.out), name)
+             for p in pages if p.group == "demos" for name in DEMO_MEDIA}
+    for (key, src), rel in {**links.copies, **media}.items():
         if src not in files[key]:
-            raise Invalid(f"{key}: {src} is not tracked, and the landing shows every demo's "
-                          "screen.png")
+            raise Invalid(f"{key}: {src} is not tracked, and the site shows every demo's "
+                          "screen and plays its loop")
         (into / rel).parent.mkdir(parents=True, exist_ok=True)
         try:
             shutil.copyfile(roots[key] / src, into / rel)
@@ -237,7 +267,7 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
     shutil.copytree(Path(str(resources.files("scry_site").joinpath("static"))), into,
                     dirs_exist_ok=True)
     (into / ".nojekyll").write_text("", encoding="utf-8")
-    return {"pages": len(rendered), "copied": len({**links.copies, **screens}),
+    return {"pages": len(rendered), "copied": len({**links.copies, **media}),
             "links": check(into)}
 
 
