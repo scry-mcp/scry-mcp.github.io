@@ -3,7 +3,8 @@
 The SCRY site, built from the SCRY repositories' own markdown: each server's front door, its
 getting started, its reference and its demos, and scry-core's README. This repository holds the
 layout, the landing page's own wording (its opening, headings and link labels), the navigation,
-and the build. A page's title and its description (its first paragraph) come from its source. Every other word the site shows about a
+and the build. A page's title and its description (its first paragraph) come from its source,
+except the landing's and each getting-started page's, which the build writes. Every other word the site shows about a
 server is read out of that server's repository at build time, so a rebuilt site says what the
 repositories say.
 
@@ -38,7 +39,7 @@ It stops at the first of these in the sources:
   tracked or named `index`, or a page under `docs/reference/` the index does not list;
 - a demo directory named outside lowercase letters, digits, `_` and `-`, or one without its
   `screen.png` or its `loop.mp4`, or a demo page whose README does not show that still alone in
-  one paragraph, which is where its loop plays;
+  one paragraph exactly once, which is where its loop plays;
 - a page without a `# ` title, or scry-core's `## Credits` not being the one credits line;
 - `--out` naming a file, the directory that holds the checkouts, or a place inside one.
 
@@ -61,8 +62,8 @@ And it lists every one of these:
   demo, linking each server that runs it, with its loop playing over its still; install lines
   folded after `--`; the console wrapping a long line instead of scrolling it), each demo page
   playing its loop in the still's place, the page list (a "Pages" line under the header on a
-  phone), a markdown twin of every page that has a source, with its links pointed at the other
-  twins, `llms.txt` listing them, and the swap into `--out`.
+  phone), a markdown twin of every page but the getting-started ones, with its links pointed at
+  the other twins, `llms.txt` listing them, and the swap into `--out`.
 - `scry_site/templates/` and `scry_site/static/` are the layout and the look; the fonts are
   served with the site under the SIL Open Font License (`scry_site/static/fonts/`).
 
