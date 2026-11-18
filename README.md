@@ -108,6 +108,7 @@ the site from the real checkouts and checks it against the design rules:
 - at the end of a command page, the tool list in reach: on a wide screen the open command, the
   section being read and the next command show in it; on a phone the corner link shows, takes
   the reader to the list opened, and hides no focused control;
+- on a phone, every link of a page's crumbs is 44 px high;
 - a focused link in the wide tool list shows its whole focus ring.
 
 It finds the checkouts in `SCRY_SITE_CHECKOUTS`, else in `repos/`, else in the directory this

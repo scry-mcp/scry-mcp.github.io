@@ -289,6 +289,8 @@ figure.shot figcaption{margin-top:var(--s3);font-size:.9375rem;color:var(--muted
 .solo{padding-top:var(--s5)}
 .crumbs{font:400 .875rem/1.4 var(--mono);color:var(--muted);margin:0 0 var(--s4);display:flex;flex-wrap:wrap;gap:var(--s2)}
 .crumbs a{color:var(--muted)}
+/* under 960 px a finger takes the crumbs: each link 44 px high, the rows touching */
+@media (max-width:959.98px){.crumbs{row-gap:0;align-items:center}.crumbs a{display:inline-flex;align-items:center;min-height:44px}}
 .side{font-size:.9375rem;min-width:0}
 .side details{border:1px solid var(--line);background:var(--surface)}
 .side summary{cursor:pointer;min-height:48px;display:flex;align-items:center;padding:0 var(--s4);font-weight:600}

@@ -221,3 +221,19 @@ def test_the_width_count_sees_a_pane_wider_than_its_box(tmp_path: Path, chrome: 
                     + "x" * 400 + "</pre></div>")
     chrome.load(page.as_uri(), 390, 844)
     assert chrome.answer(MEASURE) == [390, 1, 1]
+
+
+#: The crumbs' links at a width: how many there are, and the lowest one's height.
+CRUMBS = """(() => { const hs = [...document.querySelectorAll('.crumbs a')]
+  .map(a => a.getBoundingClientRect().height);
+  return [hs.length > 0, Math.min(...hs) >= 44]; })()"""
+
+
+def test_a_finger_takes_every_crumb_on_a_phone(real_site: Path, chrome: Chrome) -> None:
+    found = {}
+    for page in ("reference/index.html", "mame/reference/breakpoints/index.html",
+                 "mame/reference/breakpoints/breakpoint_at.html",
+                 "dosbox-x/demos/monkey/index.html"):
+        chrome.load((real_site / page).as_uri(), 390, 844)
+        found[page] = chrome.answer(CRUMBS)
+    assert found == {page: [True, True] for page in found}
