@@ -88,8 +88,8 @@ def test_the_home_limit_fails_twelve_more_words_above_the_install_block(real_sit
 def test_each_hero_limit_is_counted_and_a_part_missing_is_unreadable(real_site: Path) -> None:
     home = (real_site / "index.html").read_text()
     long = re.sub(r"<h1>(.*?)</h1>", r"<h1>\1 and far beyond</h1>", home, count=1)
-    assert home_limits(long)[1:] == ["the heading has 7 words, over 5: "
-                                     "'See inside the machine and far beyond'"]
+    assert [f for f in home_limits(long) if f.startswith("the heading")] == [
+        "the heading has 7 words, over 5: 'See inside the machine and far beyond'"]
     with pytest.raises(Unreadable, match="no a section's lead"):
         home_limits(home.replace('class="lead"', 'class="other"'))
     with pytest.raises(Unreadable, match="no '<section id=\"install\">'"):
