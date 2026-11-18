@@ -291,6 +291,8 @@ figure.shot figcaption{margin-top:var(--s3);font-size:.9375rem;color:var(--muted
 .crumbs a{color:var(--muted)}
 /* under 960 px a finger takes the crumbs: each link 44 px high, the rows touching */
 @media (max-width:959.98px){.crumbs{row-gap:0;align-items:center}.crumbs a{display:inline-flex;align-items:center;min-height:44px}}
+/* the same page on the other server, at the end of the crumbs' row */
+.crumbs .twin{margin-left:var(--s4);color:var(--link)}
 .side{font-size:.9375rem;min-width:0}
 .side details{border:1px solid var(--line);background:var(--surface)}
 .side summary{cursor:pointer;min-height:48px;display:flex;align-items:center;padding:0 var(--s4);font-weight:600}
@@ -307,11 +309,19 @@ figure.shot figcaption{margin-top:var(--s3);font-size:.9375rem;color:var(--muted
 .side-d{display:none;border:1px solid var(--line);background:var(--surface)}
 .side-d>p:first-child{margin:0;padding:var(--s3) var(--s4) var(--s1);font:600 .8125rem/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--fg)}
 .side .about{margin:0;padding:0 var(--s4) var(--s3);color:var(--muted);font-size:.875rem;line-height:1.45}
+/* a tool's list opens on the way up to its server's reference, outside the list's own scroll */
+.side .up{display:flex;align-items:center;gap:var(--s2);min-height:44px;padding:0 var(--s4);font:600 .8125rem/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--fg);text-decoration:none;border-bottom:1px solid var(--line)}
+.side .up span{color:var(--red)}
+.side .up:hover{color:var(--link)}
+.side-top{display:none}
+/* the script fits the wide list's height; a phone's folded list takes what it needs */
+@media (max-width:959.98px){.side{max-height:none!important}}
 @media (min-width:960px){
-  .side{position:sticky;top:72px;align-self:start;margin-bottom:var(--s5)}.side-m{display:none}
-  .side-d{display:block;max-height:calc(100vh - 88px);overflow-y:auto;scrollbar-width:thin}
-  .side-d a:focus-visible{outline-offset:-2px}
-  .side li a{min-height:36px}.side ul.sub a{min-height:0}}
+  .side{position:sticky;top:72px;align-self:start;margin-bottom:var(--s5);display:flex;flex-direction:column;max-height:calc(100vh - 88px)}.side-m{display:none}
+  .side-top{display:block;flex:none;border:1px solid var(--line);border-bottom:0;background:var(--surface)}
+  .side-d{display:block;min-height:0;overflow-y:auto;scrollbar-width:thin}
+  .side a:focus-visible{outline-offset:-2px}
+  .side li a,.side .up{min-height:36px}.side ul.sub a{min-height:0}}
 /* the section being read, marked in the list as the page's script follows the reader */
 .side ul.sub a[aria-current]{color:var(--fg);box-shadow:inset 2px 0 0 var(--red)}
 /* on a phone, a way back to the folded list from anywhere in the text; the foot leaves it room */

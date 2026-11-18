@@ -86,35 +86,42 @@ def rel(target: str, out: str) -> str:
     return posixpath.relpath(target, posixpath.dirname(out) or ".")
 
 
-def crumbs(out: str, trail: list[tuple[str, str]]) -> str:
-    """`SCRY / ... / here`: each step but the last a link."""
+def crumbs(out: str, trail: list[tuple[str, str]], twin: tuple[str, str] | None = None) -> str:
+    """`SCRY / ... / here`: each step but the last a link; then, where the other server has the
+    same page, a link to it."""
     steps = [f'<a href="{rel(href, out)}">{html.escape(text)}</a>' for text, href in trail[:-1]]
     steps.append(f"<span>{html.escape(trail[-1][0])}</span>")
-    return f'<p class="crumbs">{"<span aria-hidden=true>/</span>".join(steps)}</p>'
+    also = (f'<a class="twin" href="{rel(twin[1], out)}">Also in {html.escape(twin[0])}</a>'
+            if twin else "")
+    return f'<p class="crumbs">{"<span aria-hidden=true>/</span>".join(steps)}{also}</p>'
 
 
-Item = tuple[str, str, bool, list[tuple[str, str]]]
+#: A row: its text, its page, its `aria-current` value ("" for none) and its nested sections.
+Item = tuple[str, str, str, list[tuple[str, str]]]
 
 
 def side(title: str, about: str, summary: str, groups: list[tuple[str, list[Item]]], kind: str,
-         out: str) -> str:
+         out: str, head: str = "") -> str:
     """The side list: closed above the page on a phone, open beside it on a desktop. The page
-    that is open carries its own sections nested under it."""
+    that is open carries its own sections nested under it. `head` opens it, on a desktop above
+    the list's own scroll."""
     blocks = []
     for name, items in groups:
         rows = []
         for text, href, current, subs in items:
-            here = " aria-current=page" if current else ""
+            here = f" aria-current={current}" if current else ""
             nested = "".join(f'<li><a href="#{i}">{html.escape(t)}</a></li>' for i, t in subs)
             rows.append(f'<li><a{here} href="{rel(href, out)}">{html.escape(text)}</a>'
                         f'{f"<ul class=sub>{nested}</ul>" if nested else ""}</li>')
-        head = f'<p class="grp">{html.escape(name)}</p>' if name else ""
-        blocks.append(f'{head}<ul>{"".join(rows)}</ul>')
+        grp = f'<p class="grp">{html.escape(name)}</p>' if name else ""
+        blocks.append(f'{grp}<ul>{"".join(rows)}</ul>')
     lists = "".join(blocks)
     note = f'<p class="about">{about}</p>' if about else ""
+    top = f'<div class="side-top">{head}</div>' if head else ""
     return (f'<nav class="side {kind}" id="side-list" aria-label="{html.escape(title)}">'
-            f'<details class="side-m"><summary>{html.escape(summary)}</summary>{note}{lists}'
-            f'</details><div class="side-d"><p>{html.escape(title)}</p>{note}{lists}</div></nav>')
+            f'<details class="side-m"><summary>{html.escape(summary)}</summary>{head}{note}{lists}'
+            f'</details>{top}'
+            f'<div class="side-d"><p>{html.escape(title)}</p>{note}{lists}</div></nav>')
 
 
 def doc_side(pages: list[Page], current: Page, subs: list[tuple[str, str]]) -> str:
@@ -125,21 +132,27 @@ def doc_side(pages: list[Page], current: Page, subs: list[tuple[str, str]]) -> s
         ps = sorted((p for p in pages if p.repo is current.repo and p.group == group),
                     key=lambda p: p.order)
         if ps:
-            groups.append((label, [(p.label, p.out, p is current, subs if p is current else [])
-                                   for p in ps]))
+            groups.append((label, [(p.label, p.out, "page" if p is current else "",
+                                    subs if p is current else []) for p in ps]))
     count = sum(len(items) for _, items in groups)
     return side(current.repo.label, "", f"{current.repo.label}: {count} pages", groups, "docs",
                 current.out)
 
 
-def tool_side(f: Family, ts: list[reference.Tool], current: str, out: str,
+def tool_side(f: Family, fams: list[Family], ts: list[reference.Tool], current: str, out: str,
               subs: list[tuple[str, str]]) -> str:
-    """The side list of a family: its sentence, then its tools, the open one with its
-    sections."""
-    items = [(t.name, t.out, t.name == current, subs if t.name == current else []) for t in ts]
-    top = [(f"About {f.page.label}", f.page.out, not current, [] if current else subs)]
+    """The side list of a family: the way up to its server's reference, its sentence, its tools
+    (the open one with its sections), then every family of the server."""
+    server = f.page.repo
+    head = (f'<a class="up" href="{rel(f"{server.key}/reference/index.html", out)}">'
+            f'<span aria-hidden="true">&#9664;</span> {html.escape(server.label)} reference</a>')
+    items: list[Item] = [(t.name, t.out, "page" if t.name == current else "",
+                          subs if t.name == current else []) for t in ts]
+    top: list[Item] = [(f"About {f.page.label}", f.page.out, "" if current else "page",
+                        [] if current else subs)]
+    others: list[Item] = [(g.page.label, g.page.out, "true" if g is f else "", []) for g in fams]
     return side(f.page.label, inline(f.about), f"{f.page.label}: {len(ts)} tools",
-                [("", top), ("Tools", items)], "tools", out)
+                [("", top), ("Tools", items), ("Families", others)], "tools", out, head)
 
 
 def shell(*, title: str, description: str, out: str, body: str, credits: str, head: str = "",
@@ -273,23 +286,35 @@ class Site:
         p = f.page
         server = self.label(p.repo.key)
         ts = self.tools[p.out]
+        fams = [g for g in self.families if g.page.repo is p.repo]
+        other = next(r for r in self.rs if r.key not in ("core", p.repo.key))
         one, many = self.writers(p, virtual=True)
         own = many(reference.without_entries(p.markdown))
         trail = [("SCRY", "index.html"), (server, f"{p.repo.key}/index.html"),
                  ("Reference", f"{p.repo.key}/reference/index.html")]
-        body = reference.family_main(f, ts, own, crumbs(p.out, [*trail, (p.label, p.out)]), one)
+
+        def twin(out: str | None) -> tuple[str, str] | None:
+            """The same page on the other server, where it has one."""
+            return (other.label, out) if out else None
+        same = p.out.replace(f"{p.repo.key}/", f"{other.key}/", 1)
+        has = same in (g.page.out for g in self.families)
+        body = reference.family_main(
+            f, ts, own, crumbs(p.out, [*trail, (p.label, p.out)], twin(same if has else None)),
+            one)
         self.put(p.out, f"{p.label} · SCRY for {server}", describe(p),
-                 framed(tool_side(f, ts, "", p.out, render.sections(body)), body),
+                 framed(tool_side(f, fams, ts, "", p.out, render.sections(body)), body),
                  nav="reference")
         for t in ts:
             tp = t.page
             one, many = self.writers(tp, virtual=True)
             body = reference.main(t, server=server, server_key=p.repo.key,
-                                  crumbs=crumbs(t.out, [*trail, (p.label, p.out), (t.name, t.out)]),
+                                  crumbs=crumbs(t.out, [*trail, (p.label, p.out), (t.name, t.out)],
+                                                twin(self.tool_pages.get((other.key, t.name)))),
                                   inline=one, block=many)
             subs = [(reference.slug(title), title) for title, _ in t.sections]
             self.put(t.out, f"{t.name} · SCRY for {server}", render.plain(t.what),
-                     framed(tool_side(f, ts, t.name, t.out, subs), body + BACK), nav="reference")
+                     framed(tool_side(f, fams, ts, t.name, t.out, subs), body + BACK),
+                     nav="reference")
 
     def demo_page(self, p: Page, ds: list[home.Demo]) -> None:
         server = self.label(p.repo.key)

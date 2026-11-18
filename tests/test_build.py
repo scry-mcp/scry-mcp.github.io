@@ -333,6 +333,48 @@ def test_a_command_page_links_back_to_its_side_list_and_a_family_page_does_not(
     assert 'id="side-list"' in family and 'class="tolist"' not in family
 
 
+def test_a_tool_side_list_opens_on_the_servers_reference_and_ends_on_every_family(
+        repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    up = '<a class="up" href="../index.html"><span aria-hidden="true">&#9664;</span> ' \
+         'MAME reference</a>'
+    fams = ('<p class="grp">Families</p><ul><li><a href="../session/index.html">Session</a></li>'
+            '<li><a aria-current=true href="index.html">Breakpoints</a></li></ul>')
+    for page in ("scan.html", "index.html"):
+        text = (site / "mame/reference/breakpoints" / page).read_text()
+        # on a phone, first inside the folded list; on a desktop, above the list's own scroll
+        assert '<summary>Breakpoints: 2 tools</summary><a class="up"' in text
+        assert f'<div class="side-top">{up}</div><div class="side-d"><p>Breakpoints</p>' in text
+        assert text.count(up) == 2
+        assert side_of(text).endswith(f"{fams}</div>")
+    docs = (site / "mame/contributing.html").read_text()
+    assert 'class="up"' not in docs and "side-top" not in docs
+
+
+def test_a_tool_and_a_family_link_to_their_twin_on_the_other_server(
+        repos: Path, tmp_path: Path) -> None:
+    mame = repos / "scry-mame"
+    scan = "[`scan`](docs/reference/breakpoints.md#scan)"
+    replace(mame / "REFERENCE.md", scan, f"{scan}, [`peek`](docs/reference/breakpoints.md#peek)")
+    track(mame, "docs/reference/breakpoints.md", family("Breakpoints", "watch_add", "scan", "peek"))
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+
+    def twin(page: str) -> str | None:
+        found = re.search(r'<a class="twin" href="([^"]+)">([^<]+)</a></p>',
+                          (site / page).read_text())
+        return f"{found[2]} -> {found[1]}" if found else None
+    assert twin("mame/reference/breakpoints/watch_add.html") \
+        == "Also in DOSBox-X -> ../../../dosbox-x/reference/breakpoints/watch_add.html"
+    assert twin("dosbox-x/reference/breakpoints/watch_add.html") \
+        == "Also in MAME -> ../../../mame/reference/breakpoints/watch_add.html"
+    assert twin("mame/reference/breakpoints/index.html") \
+        == "Also in DOSBox-X -> ../../../dosbox-x/reference/breakpoints/index.html"
+    assert twin("mame/reference/breakpoints/peek.html") is None
+    assert twin("dosbox-x/demos/monkey/index.html") is None
+
+
 def test_a_link_to_a_tools_heading_lands_on_the_tools_page(repos: Path, tmp_path: Path) -> None:
     build.build(repos, tmp_path / "site")
     site = tmp_path / "site"

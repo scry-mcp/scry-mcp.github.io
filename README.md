@@ -108,10 +108,13 @@ the site from the real checkouts and checks it against the design rules:
 - at the end of a command page, the tool list in reach: on a wide screen the open command, the
   section being read and the next command show in it; on a phone the corner link shows, takes
   the reader to the list opened, and hides no focused control;
+- at the end of a command or family page, the list's way up to the server's reference shows
+  without scrolling the page back, and its last group holds every family of the server;
 - at the end of a family or document page in a short window, the wide side list sits between
   the bar and the foot;
 - on a phone, every link of a page's crumbs is 44 px high;
-- a focused link in the wide tool list shows its whole focus ring.
+- on a phone, the side list opened ends above the text;
+- a focused link in the wide tool list, and its way up, shows its whole focus ring.
 
 It finds the checkouts in `SCRY_SITE_CHECKOUTS`, else in `repos/`, else in the directory this
 repository sits in. It finds Chrome in `SCRY_SITE_CHROME`, else on the `PATH`, else where macOS

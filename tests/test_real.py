@@ -157,6 +157,52 @@ def test_the_end_of_a_command_page_reaches_its_side_list(
     assert found == {page: [True] * 4 for page in found}
 
 
+#: From the end of a tool's or a family's page, without scrolling the page back: the way up to
+#: the server's reference shows, a finger's height (36 px on a desktop), and the list's last group
+#: holds every family of the server, the one open marked, its last link brought into view by the
+#: list's own scroll. On a phone the list is reached by its corner link (a command page) or its
+#: summary (a family page).
+UP = """(async () => {
+  const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  scrollTo(0, document.documentElement.scrollHeight); await frame();
+  const wide = innerWidth >= 960, tall = wide ? 36 : 44;
+  if (!wide) {
+    const back = document.querySelector('.tolist');
+    if (back) back.click();
+    else { document.querySelector('.side-m > summary').click(); await frame();
+           document.querySelector('#side-list').scrollIntoView(); }
+    await frame();
+  }
+  const bar = document.querySelector('.menubar').getBoundingClientRect().bottom;
+  const shows = e => { const b = e.getBoundingClientRect();
+    return b.height >= tall && b.top >= bar - 1 && b.bottom <= innerHeight + 1; };
+  const up = document.querySelector(wide ? '.side-top a.up' : '.side-m a.up');
+  const said = [shows(up), /reference\\/index\\.html$/.test(up.href)];
+  const list = document.querySelector(wide ? '.side-d' : '.side-m');
+  const grp = [...list.querySelectorAll('.grp')].at(-1);
+  const fams = [...grp.nextElementSibling.querySelectorAll('a')];
+  fams.at(-1).scrollIntoView({block: 'nearest'}); await frame();
+  return [...said, grp.textContent, fams.length,
+          fams.filter(a => a.getAttribute('aria-current')).length, shows(fams.at(-1)),
+          !wide || scrollY + innerHeight >= document.documentElement.scrollHeight - 2];
+})()"""
+
+
+@pytest.mark.parametrize(("width", "height"), [(390, 844), (1440, 900), (1440, 700)])
+def test_the_end_of_a_tool_or_family_page_reaches_the_reference_and_every_family(
+        real_site: Path, chrome: Chrome, width: int, height: int) -> None:
+    found = {}
+    for page in [*COMMANDS, "dosbox-x/reference/session/start.html",
+                 "mame/reference/breakpoints/index.html"]:
+        fams = len(list((real_site / page).parent.parent.glob("*/index.html")))
+        chrome.load((real_site / page).as_uri(), width, height)
+        found[page] = chrome.answer(UP)
+        assert fams > 10
+        assert found[page][3] == fams, page
+    assert found == {page: [True, True, "Families", found[page][3], 1, True, True]
+                     for page in found}
+
+
 #: At the end of a page, in a short window: the wide side list starts under the bar and ends at
 #: least 24 px above the foot.
 FITS = """(async () => {
@@ -212,9 +258,10 @@ def test_no_focused_control_hides_under_the_way_back(real_site: Path, chrome: Ch
 
 
 #: Whether the focused link's ring (its box grown by the outline's width and offset) lies inside
-#: the wide side list's box, which clips what overflows it.
+#: the box of the wide side list's half that holds it, the way up or the list, which clips what
+#: overflows it.
 RING = """(() => {
-  const side = document.querySelector('.side-d'), a = document.activeElement;
+  const a = document.activeElement, side = a.closest('.side-top, .side-d') || document.body;
   const cs = getComputedStyle(a), grow = parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset);
   const r = a.getBoundingClientRect(), box = side.getBoundingClientRect();
   return [side.contains(a), cs.outlineStyle, r.left - grow >= box.left + side.clientLeft,
@@ -226,9 +273,13 @@ def test_a_focused_link_in_the_wide_side_list_shows_its_whole_ring(
         real_site: Path, chrome: Chrome) -> None:
     chrome.load((real_site / "dosbox-x/reference/session/start.html").as_uri(), 1440, 900)
     chrome.answer("document.querySelector('.menubar nav a:last-child').focus()")
-    chrome.ws.call("Input.dispatchKeyEvent", type="keyDown", key="Tab", code="Tab",
-                   windowsVirtualKeyCode=9)
-    assert chrome.answer(RING) == [True, "solid", True, True]
+    rings = []
+    for _ in range(2):
+        chrome.ws.call("Input.dispatchKeyEvent", type="keyDown", key="Tab", code="Tab",
+                       windowsVirtualKeyCode=9)
+        rings.append([chrome.answer("document.activeElement.closest('.side-top, .side-d')"
+                                    "?.className"), *chrome.answer(RING)])
+    assert rings == [["side-top", True, "solid", True, True], ["side-d", True, "solid", True, True]]
 
 
 def test_a_page_the_width_case_measures_exists(real_site: Path) -> None:
@@ -248,6 +299,26 @@ def test_the_width_count_sees_a_pane_wider_than_its_box(tmp_path: Path, chrome: 
 CRUMBS = """(() => { const hs = [...document.querySelectorAll('.crumbs a')]
   .map(a => a.getBoundingClientRect().height);
   return [hs.length > 0, Math.min(...hs) >= 44]; })()"""
+
+
+#: On a phone, the folded list opened from the end of the page: whether it ends above the text.
+OPENED = """(async () => {
+  const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  scrollTo(0, document.documentElement.scrollHeight); await frame();
+  const fold = document.querySelector('.side-m'); fold.open = true; await frame();
+  dispatchEvent(new Event('scroll')); await frame();
+  return fold.getBoundingClientRect().bottom
+    <= document.querySelector('main').getBoundingClientRect().top;
+})()"""
+
+
+def test_a_phones_opened_side_list_ends_above_the_text(real_site: Path, chrome: Chrome) -> None:
+    found = {}
+    for page in ("mame/reference/breakpoints/breakpoint_at.html",
+                 "mame/reference/breakpoints/index.html", "mame/contributing.html"):
+        chrome.load((real_site / page).as_uri(), 390, 844)
+        found[page] = chrome.answer(OPENED)
+    assert found == {page: True for page in found}
 
 
 def test_a_finger_takes_every_crumb_on_a_phone(real_site: Path, chrome: Chrome) -> None:

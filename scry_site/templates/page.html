@@ -67,7 +67,7 @@ if (sd) {
     y = e => e.getBoundingClientRect().top - sd.getBoundingClientRect().top + sd.scrollTop;
   let was;
   const follow = () => {
-    sd.style.maxHeight = Math.min(innerHeight - 88, sd.closest(".docframe").getBoundingClientRect().bottom - 96) + "px";
+    sd.parentNode.style.maxHeight = Math.min(innerHeight - 88, sd.closest(".docframe").getBoundingClientRect().bottom - 96) + "px";
     const end = scrollY + innerHeight > document.documentElement.scrollHeight - 2,
       h = !scrollY ? null : end ? hs.at(-1) : hs.filter(e => e.getBoundingClientRect().top < innerHeight / 2).pop();
     let read;
