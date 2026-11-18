@@ -321,6 +321,18 @@ def test_the_side_list_nests_the_open_tools_sections_under_it(repos: Path,
     assert 'class="toc"' not in page
 
 
+def test_a_command_page_links_back_to_its_side_list_and_a_family_page_does_not(
+        repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    tool = (tmp_path / "site/mame/reference/breakpoints/scan.html").read_text()
+    assert '<nav class="side tools" id="side-list" aria-label="Breakpoints">' in tool
+    main = tool[tool.index('<main id="content"'):tool.index("</main>")]
+    assert main.endswith('<a class="tolist" href="#side-list">'
+                         '<span aria-hidden="true">&#9650;</span> Tools</a>')
+    family = (tmp_path / "site/mame/reference/breakpoints/index.html").read_text()
+    assert 'id="side-list"' in family and 'class="tolist"' not in family
+
+
 def test_a_link_to_a_tools_heading_lands_on_the_tools_page(repos: Path, tmp_path: Path) -> None:
     build.build(repos, tmp_path / "site")
     site = tmp_path / "site"

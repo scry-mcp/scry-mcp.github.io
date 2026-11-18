@@ -115,6 +115,44 @@ def test_no_page_scrolls_sideways_no_pane_overflows_and_no_text_is_under_13_px(
     assert found == {page: [width, 0, 0] for page in KINDS}
 
 
+#: Where a reader at the end of a command page stands. On a wide screen: the side list starts
+#: under the top bar, and the open command, the section being read (the last one) and the next
+#: command, where there is one, show inside the window. On a phone: the way back shows, 44 px
+#: high, and lands on the folded list under the bar, opened.
+REACH = """(async () => {
+  const frame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  scrollTo(0, document.documentElement.scrollHeight); await frame();
+  const bar = document.querySelector('.menubar').getBoundingClientRect().bottom;
+  const box = e => e.getBoundingClientRect();
+  const inside = e => box(e).height > 0 && box(e).top >= bar && box(e).bottom <= innerHeight;
+  if (innerWidth >= 960) {
+    const side = document.querySelector('.side-d'), open = side.querySelector('a[aria-current]');
+    const read = side.querySelector('.sub a[aria-current]');
+    const next = open.parentElement.nextElementSibling;
+    const last = side.querySelector('.sub li:last-child a');
+    return [box(side).top >= bar, inside(open), read === last && inside(read),
+            !next || inside(next.firstElementChild)];
+  }
+  const back = document.querySelector('.tolist');
+  const shown = inside(back) && box(back).height >= 44;
+  back.click(); await frame();
+  const fold = document.querySelector('.side-m');
+  return [shown, inside(fold.querySelector('summary')), fold.open,
+          inside(fold.querySelector('ul a'))];
+})()"""
+COMMANDS = [p for p in KINDS if "/reference/" in p and not p.endswith("index.html")]
+
+
+@pytest.mark.parametrize(("width", "height"), [(390, 844), (1440, 900), (1440, 700)])
+def test_the_end_of_a_command_page_reaches_its_side_list(
+        real_site: Path, chrome: Chrome, width: int, height: int) -> None:
+    found = {}
+    for page in [*COMMANDS, "dosbox-x/reference/session/start.html"]:
+        chrome.load((real_site / page).as_uri(), width, height)
+        found[page] = chrome.answer(REACH)
+    assert found == {page: [True] * 4 for page in found}
+
+
 def test_a_page_the_width_case_measures_exists(real_site: Path) -> None:
     assert [p for p in KINDS if not (real_site / p).is_file()] == []
 

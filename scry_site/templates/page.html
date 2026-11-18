@@ -42,7 +42,8 @@
   </div>
 </footer>
 <script>
-/* Copy buttons where the clipboard exists, and the moments under a picture lit in time with it.
+/* Copy buttons where the clipboard exists, the moments under a picture lit in time with it, and
+   on a command page the side list fitted above the foot, following the section being read.
    The page reads whole without this script. */
 if (navigator.clipboard) for (const e of document.querySelectorAll("[data-copy]")) {
   const pre = e.matches("pre"), b = document.createElement("button");
@@ -59,6 +60,30 @@ if (timed && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
     img.onload = () => { void timed.offsetWidth; timed.classList.add("live"); };
     img.src = img.src; };
   go(); document.addEventListener("visibilitychange", () => document.hidden || go());
+}
+const back = document.querySelector(".tolist");
+if (back) {
+  const fold = document.querySelector(".side-m"), sd = document.querySelector(".side-d"),
+    open = sd.querySelector("[aria-current]"), hs = [...document.querySelectorAll(".doc>h2[id]")],
+    y = e => e.getBoundingClientRect().top - sd.getBoundingClientRect().top + sd.scrollTop;
+  let was;
+  const follow = () => {
+    sd.style.maxHeight = Math.min(innerHeight - 88, sd.closest(".docframe").getBoundingClientRect().bottom - 72) + "px";
+    const end = scrollY + innerHeight > document.documentElement.scrollHeight - 2,
+      h = end ? hs.at(-1) : hs.filter(e => e.getBoundingClientRect().top < innerHeight / 2).pop();
+    let read;
+    for (const a of sd.querySelectorAll(".sub a"))
+      if (h && a.hash === "#" + h.id) { a.setAttribute("aria-current", "location"); read = a; }
+      else a.removeAttribute("aria-current");
+    const now = read && read.hash + sd.clientHeight;
+    if (now && now !== was) {
+      const last = open.parentElement.nextElementSibling?.firstElementChild || read;
+      sd.scrollTop = Math.max(y(open) - 8, y(last) + last.offsetHeight + 8 - sd.clientHeight);
+    }
+    was = now;
+  };
+  back.onclick = () => { fold.open = true; };
+  follow(); addEventListener("scroll", follow, {passive: true}); addEventListener("resize", follow);
 }
 </script>
 </body>

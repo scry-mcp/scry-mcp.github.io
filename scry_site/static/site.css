@@ -308,7 +308,15 @@ figure.shot figcaption{margin-top:var(--s3);font-size:.9375rem;color:var(--muted
 @media (min-width:960px){
   .side{position:sticky;top:72px;align-self:start}.side-m{display:none}
   .side-d{display:block;max-height:calc(100vh - 88px);overflow-y:auto;scrollbar-width:thin}
-  .side li a{min-height:36px}}
+  .side li a{min-height:36px}.side ul.sub a{min-height:0}}
+/* the section being read, marked in the list as the page's script follows the reader */
+.side ul.sub a[aria-current]{color:var(--fg);box-shadow:inset 2px 0 0 var(--red)}
+/* on a phone, a way back to the folded list from anywhere in the text; the foot leaves it room */
+.tolist{position:fixed;right:var(--s4);bottom:var(--s4);z-index:9;display:flex;align-items:center;gap:var(--s2);min-height:44px;padding:0 var(--s4);background:var(--bg);border:1px solid var(--edge);color:var(--fg);text-decoration:none;font:600 .8125rem/1 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.tolist span{color:var(--red)}
+.tolist:hover{border-color:var(--red)}
+body:has(.tolist) .foot{padding-bottom:var(--s8)}
+@media (min-width:960px){.tolist{display:none}body:has(.tolist) .foot{padding-bottom:var(--s5)}}
 .doc{min-width:0}
 .doc>h1{margin-bottom:var(--s4)}
 .doc [align=center]{text-align:center}

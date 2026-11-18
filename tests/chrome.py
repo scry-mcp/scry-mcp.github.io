@@ -168,7 +168,8 @@ class Chrome:
         raise Broken(f"the page never finished loading: {url}")
 
     def answer(self, js: str) -> Any:
-        r = self.ws.call("Runtime.evaluate", expression=js, returnByValue=True)
+        r = self.ws.call("Runtime.evaluate", expression=js, returnByValue=True,
+                         awaitPromise=True)
         if "exceptionDetails" in r:
             raise Broken(f"the script failed: {r['exceptionDetails']}")
         return r["result"].get("value")

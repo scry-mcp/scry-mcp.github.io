@@ -112,7 +112,7 @@ def side(title: str, about: str, summary: str, groups: list[tuple[str, list[Item
         blocks.append(f'{head}<ul>{"".join(rows)}</ul>')
     lists = "".join(blocks)
     note = f'<p class="about">{about}</p>' if about else ""
-    return (f'<nav class="side {kind}" aria-label="{html.escape(title)}">'
+    return (f'<nav class="side {kind}" id="side-list" aria-label="{html.escape(title)}">'
             f'<details class="side-m"><summary>{html.escape(summary)}</summary>{note}{lists}'
             f'</details><div class="side-d"><p>{html.escape(title)}</p>{note}{lists}</div></nav>')
 
@@ -150,6 +150,10 @@ def shell(*, title: str, description: str, out: str, body: str, credits: str, he
     return template("page.html", title=html.escape(title), description=html.escape(description),
                     root=root, head=f"<style>\n{head}\n</style>" if head else "", body=body,
                     credits=credits, nav_demos=on["demos"], nav_reference=on["reference"])
+
+
+#: A command page's way back to its side list, for a reader deep in the text on a phone.
+BACK = '<a class="tolist" href="#side-list"><span aria-hidden="true">&#9650;</span> Tools</a>'
 
 
 def framed(side_html: str, main: str) -> str:
@@ -285,7 +289,7 @@ class Site:
                                   inline=one, block=many)
             subs = [(reference.slug(title), title) for title, _ in t.sections]
             self.put(t.out, f"{t.name} · SCRY for {server}", render.plain(t.what),
-                     framed(tool_side(f, ts, t.name, t.out, subs), body), nav="reference")
+                     framed(tool_side(f, ts, t.name, t.out, subs), body + BACK), nav="reference")
 
     def demo_page(self, p: Page, ds: list[home.Demo]) -> None:
         server = self.label(p.repo.key)
