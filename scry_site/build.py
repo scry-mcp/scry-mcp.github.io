@@ -161,9 +161,12 @@ def solo(main: str) -> str:
 
 
 def guard(base: Path, out: Path) -> None:
-    """`out` is replaced whole, so it may not hold the sources, nor be anything but a directory."""
+    """`out` is replaced whole, so it may not hold the sources, nor be anything but an earlier
+    build or an empty directory."""
     if out.exists() and not out.is_dir():
         raise Invalid(f"--out {out} is not a directory")
+    if out.is_dir() and any(out.iterdir()) and not (out / ".nojekyll").exists():
+        raise Invalid(f"--out {out} holds files no build made; replacing it would delete them")
     if out == base or out in base.parents:
         raise Invalid(f"--out {out} is or holds {base}, where the checkouts are; replacing it "
                       "would delete them")

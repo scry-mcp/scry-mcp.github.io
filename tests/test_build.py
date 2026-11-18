@@ -501,6 +501,22 @@ def test_a_chunk_of_odd_length_is_padded_to_the_next_one(tmp_path: Path) -> None
     assert (c.width, c.height, c.frames_ms) == (320, 200, (1000, 2000))
 
 
+def test_an_out_that_holds_something_no_build_made_is_refused_and_kept(
+        repos: Path, tmp_path: Path) -> None:
+    """`--out` is replaced whole: a directory a build did not make (the site's own checkout, a
+    home) would be deleted with everything in it."""
+    out = tmp_path / "mine"
+    out.mkdir()
+    (out / "keep.txt").write_text("mine")
+    with pytest.raises(Invalid, match=r"--out .*mine holds files no build made"):
+        build.build(repos, out)
+    assert (out / "keep.txt").read_text() == "mine"
+    build.build(repos, tmp_path / "site")
+    build.build(repos, tmp_path / "site")
+    (tmp_path / "empty").mkdir()
+    build.build(repos, tmp_path / "empty")
+
+
 def test_a_link_to_an_untracked_path_is_invalid(repos: Path, tmp_path: Path) -> None:
     f = repos / "scry-mame/docs/reference/session.md"
     f.write_text(f.read_text() + "\nSee [gone](../../nowhere.md).\n")
