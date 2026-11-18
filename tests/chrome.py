@@ -121,8 +121,11 @@ class Chrome:
                     break
                 time.sleep(0.05)
             else:
-                said = self.log.read_text(errors="replace").strip()[-600:]
-                raise Broken(f"Chrome wrote no DevToolsActivePort; it said: {said or 'nothing'}")
+                said = [line for line in self.log.read_text(errors="replace").splitlines()
+                        if "dbus" not in line]
+                tail = " | ".join(said)[-1500:] or "nothing"
+                raise Broken(f"Chrome wrote no DevToolsActivePort (exit {self.process.poll()}); "
+                             f"it said, D-Bus lines left out: {tail}")
             port = port_file.read_text().split("\n")[0]
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=30) as r:
                 pages = json.load(r)
