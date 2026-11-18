@@ -118,14 +118,30 @@ someone starts the "Deploy site" workflow by hand, on `main`, from the Actions t
 gh workflow run deploy-site.yml --ref main
 ```
 
-The run repeats the checks, builds from the three repositories' `main` and keeps the result as a
-release named by this repository's commit. It then serves that release and clears the cache.
+Run it whenever a server's documents change; this repository needs no new commit. The run
+repeats the checks, builds from the three repositories' `main`, serves the result and clears
+the cache.
 
-To go back, run it again with the commit of an earlier published release; nothing is rebuilt:
+Each run that builds keeps what it built as a new release, which is never written again. A release is named
+by when it was built, in UTC, and this repository's commit: `20261118-153012-f10abef`. It
+records the commits of this repository and of the three it was built from.
+
+The list of releases is the run history of "Deploy site": each run's summary names its release
+and those four commits. To list the runs:
 
 ```sh
-gh workflow run deploy-site.yml --ref main -f release=<commit>
+gh run list --workflow deploy-site.yml
 ```
+
+To go back, run it again with an earlier release's name. Nothing is rebuilt, and the site is
+exactly what that release holds:
+
+```sh
+gh workflow run deploy-site.yml --ref main -f release=20261118-153012-f10abef
+```
+
+A run refuses a name it does not know, and a release whose upload never finished. Releases from
+before this naming, named by a commit alone, stay stored but cannot be served again.
 
 A pull request and every push to `main` run the checks and the build in `ci.yml`. Both
 workflows clone the three repositories without a token, so they must stay public.
