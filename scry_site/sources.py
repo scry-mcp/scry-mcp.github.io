@@ -67,12 +67,14 @@ def repos(base: Path) -> list[Repo]:
 
 
 def tracked(repo: Repo) -> list[str]:
+    """The files git tracks, symbolic links left out: a copy follows a link out of the tree."""
     try:
-        out = subprocess.run(["git", "-C", str(repo.root), "ls-files", "-z"], check=True,
+        out = subprocess.run(["git", "-C", str(repo.root), "ls-files", "-s", "-z"], check=True,
                              capture_output=True, text=True).stdout
     except (OSError, subprocess.CalledProcessError) as e:
         raise Invalid(f"{repo.root} is not a git checkout git can list: {e}") from e
-    return [f for f in out.split("\0") if f]
+    rows = (row.split("\t", 1) for row in out.split("\0") if row)
+    return [path for stage, path in rows if not stage.startswith("120000 ")]
 
 
 def read(repo: Repo, src: str) -> str:

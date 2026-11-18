@@ -517,6 +517,19 @@ def test_an_out_that_holds_something_no_build_made_is_refused_and_kept(
     build.build(repos, tmp_path / "empty")
 
 
+def test_a_tracked_symlink_is_not_followed_into_the_site(repos: Path, tmp_path: Path) -> None:
+    """A tracked link is copied as the file it points at, which can be the checkout's own
+    `.git/config` with the workflow's token in it."""
+    mame = repos / "scry-mame"
+    still = next(mame.glob("demos/*/screen.png"))
+    still.unlink()
+    still.symlink_to("../../.git/config")
+    subprocess.run(["git", "-C", str(mame), "add", "-A"], check=True)
+    with pytest.raises(Invalid, match=r"no repository tracks:\n.*gridlee/screen.png"):
+        build.build(repos, tmp_path / "site")
+    assert not (tmp_path / "site").exists()
+
+
 def test_a_link_to_an_untracked_path_is_invalid(repos: Path, tmp_path: Path) -> None:
     f = repos / "scry-mame/docs/reference/session.md"
     f.write_text(f.read_text() + "\nSee [gone](../../nowhere.md).\n")
