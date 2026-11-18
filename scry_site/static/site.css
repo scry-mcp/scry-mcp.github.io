@@ -316,8 +316,12 @@ figure.shot figcaption{margin-top:var(--s3);font-size:.9375rem;color:var(--muted
 .tolist span{color:var(--red)}
 .tolist:hover{border-color:var(--red)}
 body:has(.tolist) .foot{padding-bottom:var(--s8)}
-@media (min-width:960px){.tolist{display:none}body:has(.tolist) .foot{padding-bottom:var(--s5)}}
+html:has(.tolist){scroll-padding-bottom:var(--s8)}
+@media (min-width:960px){.tolist{display:none}body:has(.tolist) .foot{padding-bottom:var(--s5)}html:has(.tolist){scroll-padding-bottom:0}}
 .doc{min-width:0}
+/* the foot's gap belongs to the frame's row, so the sticky side list may use it at the page's end */
+.docframe>.doc{padding-bottom:var(--s9)}
+.docframe+.foot{margin-top:0}
 .doc>h1{margin-bottom:var(--s4)}
 .doc [align=center]{text-align:center}
 .doc table[align]{margin:0 auto var(--s4)}

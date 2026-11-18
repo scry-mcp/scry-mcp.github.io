@@ -68,9 +68,9 @@ if (back) {
     y = e => e.getBoundingClientRect().top - sd.getBoundingClientRect().top + sd.scrollTop;
   let was;
   const follow = () => {
-    sd.style.maxHeight = Math.min(innerHeight - 88, sd.closest(".docframe").getBoundingClientRect().bottom - 72) + "px";
+    sd.style.maxHeight = Math.min(innerHeight - 88, sd.closest(".docframe").getBoundingClientRect().bottom - 96) + "px";
     const end = scrollY + innerHeight > document.documentElement.scrollHeight - 2,
-      h = end ? hs.at(-1) : hs.filter(e => e.getBoundingClientRect().top < innerHeight / 2).pop();
+      h = !scrollY ? null : end ? hs.at(-1) : hs.filter(e => e.getBoundingClientRect().top < innerHeight / 2).pop();
     let read;
     for (const a of sd.querySelectorAll(".sub a"))
       if (h && a.hash === "#" + h.id) { a.setAttribute("aria-current", "location"); read = a; }
@@ -78,7 +78,7 @@ if (back) {
     const now = read && read.hash + sd.clientHeight;
     if (now && now !== was) {
       const last = open.parentElement.nextElementSibling?.firstElementChild || read;
-      sd.scrollTop = Math.max(y(open) - 8, y(last) + last.offsetHeight + 8 - sd.clientHeight);
+      sd.scrollTop = Math.max(y(open), y(last) + last.offsetHeight - sd.clientHeight);
     }
     was = now;
   };
