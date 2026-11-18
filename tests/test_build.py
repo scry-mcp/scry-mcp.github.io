@@ -509,6 +509,17 @@ def test_a_link_to_an_untracked_path_is_invalid(repos: Path, tmp_path: Path) -> 
     assert not (tmp_path / "site").exists()
 
 
+def test_a_link_only_the_markdown_twin_resolves_is_invalid_too(repos: Path,
+                                                               tmp_path: Path) -> None:
+    """An unused reference definition is no link of the HTML page, but the page's markdown twin
+    and `llms.txt` carry it as written."""
+    f = repos / "scry-mame/docs/reference/session.md"
+    f.write_text(f.read_text() + "\n[gone]: ../../nowhere.md\n")
+    with pytest.raises(Invalid, match=r"scry-mame/docs/reference/session.md: \.\./\.\./nowhere.md"):
+        build.build(repos, tmp_path / "site")
+    assert not (tmp_path / "site").exists()
+
+
 def test_a_reference_page_the_index_misses_is_invalid_and_a_folder_under_it_is_not(
         repos: Path, tmp_path: Path) -> None:
     track(repos / "scry-dosbox-x", "docs/reference/tour/TRANSCRIPT.md", "# The tour\n")

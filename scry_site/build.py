@@ -374,10 +374,10 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
     site.render_pages(ds)
     site.reference_index()
     site.home(ds)
+    twins = {twin_path(p): render.twin(p, site.links) for p in site.pages}
     if site.links.broken:
         raise Invalid("links in the sources to paths no repository tracks:\n  "
                       + "\n  ".join(sorted(site.links.broken)))
-    twins = {twin_path(p): render.twin(p, site.links) for p in site.pages}
     for path, text in {**site.rendered, **twins, "llms.txt": llms_txt(rs, site.pages)}.items():
         dest = into / path
         dest.parent.mkdir(parents=True, exist_ok=True)
