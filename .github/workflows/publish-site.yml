@@ -1,0 +1,163 @@
+# Publishes the site to scryai.net: build a release, or select one already published, and serve it.
+#
+# Every publish writes releases/<commit>/ first and the served root is synchronised from that
+# release, so a rollback is the same run with the earlier commit in `release`: nothing is rebuilt.
+# The release is named by this repository's commit; the commits of the three repositories it was
+# built from are in the run's summary.
+name: Publish site
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment the job runs in, which the content role's trust names
+        required: true
+        type: string
+      release:
+        description: Release to publish (a commit already under releases/); empty builds the dispatched ref
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+# A publish is never cancelled half-way. GitHub keeps one run waiting and a third dispatch
+# replaces the waiting one, so a run that must not be lost is checked by its own conclusion.
+concurrency:
+  group: publish-site-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  # The build holds no token AWS trusts: its dependencies and tests run without one.
+  build:
+    name: Check and build the release
+    if: inputs.release == ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Cloned anonymously, so a repository that is not public fails here instead of building.
+      - name: Clone the three repositories the site is built from
+        timeout-minutes: 3
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          for repo in scry-core scry-mame scry-dosbox-x; do
+            git clone --quiet --depth 1 --branch main \
+              "https://github.com/scry-mcp/$repo.git" "repos/$repo"
+            echo "- $repo \`$(git -C "repos/$repo" rev-parse HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        timeout-minutes: 3
+      - name: Install
+        timeout-minutes: 3
+        run: uv sync --locked
+      - name: Check and build
+        run: |
+          uv run --locked ruff check .
+          uv run --locked mypy --strict .
+          uv run --locked pytest -q
+          uv run --locked scry-site repos --out _site
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: site
+          path: _site/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    name: Publish the release and invalidate
+    needs: build
+    # A rollback skips the build; a failed or cancelled build stops here.
+    if: ${{ !cancelled() && (needs.build.result == 'success' || (inputs.release != '' && needs.build.result == 'skipped')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BUCKET: ${{ vars.SITE_BUCKET }}
+      DISTRIBUTION: ${{ vars.SITE_DISTRIBUTION_ID }}
+    steps:
+      # The environment's branch policy refuses this too; the step puts the reason in the run's log.
+      - name: Refuse a production publish outside main
+        if: inputs.environment == 'production' && github.ref != 'refs/heads/main'
+        run: |
+          echo "production publishes only from main; this run is from $GITHUB_REF"
+          exit 1
+      # An unset variable would turn every path below into a path of the bucket's root.
+      - name: Check the environment's variables
+        env:
+          ROLE: ${{ vars.AWS_ROLE_ARN }}
+          REGION: ${{ vars.AWS_REGION }}
+        run: |
+          missing=""
+          [ -n "$ROLE" ] || missing="$missing AWS_ROLE_ARN"
+          [ -n "$REGION" ] || missing="$missing AWS_REGION"
+          [ -n "$BUCKET" ] || missing="$missing SITE_BUCKET"
+          [ -n "$DISTRIBUTION" ] || missing="$missing SITE_DISTRIBUTION_ID"
+          if [ -n "$missing" ]; then
+            echo "the environment lacks:$missing"
+            exit 1
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.release == ''
+        with:
+          name: site
+          path: _site/
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Upload the release
+        if: inputs.release == ''
+        run: |
+          aws s3 sync _site/ "s3://$BUCKET/releases/$GITHUB_SHA/" --delete
+          # A manifest written last tells a complete release from an interrupted upload.
+          set -o pipefail
+          objects="$(aws s3 ls --recursive "s3://$BUCKET/releases/$GITHUB_SHA/" | wc -l | tr -d ' ')"
+          if [ "$objects" -le 0 ]; then
+            echo "the release listing is empty or failed; no manifest is written"
+            exit 1
+          fi
+          echo "$objects" | aws s3 cp - "s3://$BUCKET/releases/$GITHUB_SHA/objects.txt"
+      - name: Fetch the release
+        env:
+          RELEASE: ${{ inputs.release || github.sha }}
+        run: |
+          prefix="s3://$BUCKET/releases/$RELEASE/"
+          if ! expected="$(aws s3 cp "${prefix}objects.txt" -)"; then
+            echo "release $RELEASE has no manifest; publish it from its commit before rolling back to it"
+            exit 1
+          fi
+          # The listing's own status is read first: a refused call must not read as an empty
+          # release.
+          if ! listing="$(aws s3 ls --recursive "$prefix")"; then
+            echo "release $RELEASE could not be listed; check the role and the prefix"
+            exit 1
+          fi
+          actual="$(printf '%s\n' "$listing" | grep -c . || true)"
+          if [ "$actual" -ne "$((expected + 1))" ]; then
+            echo "release $RELEASE is incomplete: $((actual - 1)) objects, $expected recorded"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/site"
+          aws s3 cp --recursive --quiet "$prefix" "$RUNNER_TEMP/site/"
+          rm -f "$RUNNER_TEMP/site/objects.txt"
+          # A downloaded file keeps its object's upload time, so an older release is older than
+          # the root, and sync skips an older file of the same size: every file is made newer.
+          find "$RUNNER_TEMP/site" -type f -exec touch {} +
+      - name: Publish the root from the release
+        run: |
+          aws s3 sync "$RUNNER_TEMP/site/" "s3://$BUCKET/" --delete --exclude 'releases/*' \
+            --cache-control 'public, max-age=0, must-revalidate'
+      - name: Invalidate
+        run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/*'

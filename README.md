@@ -1,4 +1,4 @@
-# scry-mcp.github.io
+# scry-site
 
 This repository builds the SCRY site from the SCRY repositories' own documents. The site has a
 home, a page per tool of each server, a page per demo with its clip moving, and every other
@@ -84,7 +84,8 @@ It lists every one of these:
   relative link at its page here, at a copy of the file, or at the file on GitHub.
 - `scry_site/check.py` follows every link inside the built site.
 - `scry_site/build.py` puts it together. It also writes a markdown copy of every page made from
-  a whole document, and `llms.txt`, which lists those copies.
+  a whole document, `llms.txt`, which lists those copies, and `404.html`, the page served for
+  any address that holds none.
 - `scry_site/templates/` and `scry_site/static/` are the layout and the look. The fonts are
   served with the site under the SIL Open Font License (`scry_site/static/fonts/`).
 
@@ -110,9 +111,24 @@ installs it. Without either, it fails.
 
 ## Publishing
 
-`.github/workflows/pages.yml` runs the checks, builds from the three repositories' `main` and
-deploys to GitHub Pages, on a push here or a run started by hand. It clones them with the
-workflow's own token, which reaches public repositories only.
+The site is served at [scryai.net](https://scryai.net/), and nothing goes there by itself:
+someone starts the "Deploy site" workflow by hand, on `main`, from the Actions tab or with:
+
+```sh
+gh workflow run deploy-site.yml --ref main
+```
+
+The run repeats the checks, builds from the three repositories' `main` and keeps the result as a
+release named by this repository's commit. It then serves that release and clears the cache.
+
+To go back, run it again with the commit of an earlier published release; nothing is rebuilt:
+
+```sh
+gh workflow run deploy-site.yml --ref main -f release=<commit>
+```
+
+A pull request and every push to `main` run the checks and the build in `ci.yml`. Both
+workflows clone the three repositories without a token, so they must stay public.
 
 ## Licence
 

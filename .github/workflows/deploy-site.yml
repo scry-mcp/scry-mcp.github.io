@@ -1,0 +1,24 @@
+# Production, launched by hand from main: the launch is the approval. The steps are in
+# `publish-site.yml`; a rollback is this run with an earlier commit in `release`.
+name: Deploy site
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Release to publish (a commit already under releases/); empty builds the dispatched ref
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/publish-site.yml
+    with:
+      environment: production
+      release: ${{ inputs.release }}

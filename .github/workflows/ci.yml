@@ -1,0 +1,49 @@
+# Checks the site and builds it from the three repositories' main, on every pull request and on
+# every push to main; a branch is checked by its pull request, so it is not run twice. Nothing here
+# reaches AWS.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push supersedes the last run of the same pull request or branch.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site:
+    name: ruff, mypy, pytest and the build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step pushes, so the token is not left in .git/config for the code under test.
+          persist-credentials: false
+      # Cloned anonymously, so a repository that is not public fails here instead of building.
+      - name: Clone the three repositories the site is built from
+        timeout-minutes: 3
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          for repo in scry-core scry-mame scry-dosbox-x; do
+            git clone --quiet --depth 1 --branch main \
+              "https://github.com/scry-mcp/$repo.git" "repos/$repo"
+            echo "- $repo \`$(git -C "repos/$repo" rev-parse HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        timeout-minutes: 3
+      - name: Install
+        timeout-minutes: 3
+        run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked mypy --strict .
+      - run: uv run --locked pytest -q
+      - run: uv run --locked scry-site repos --out _site
