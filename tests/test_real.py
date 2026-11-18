@@ -190,6 +190,26 @@ def test_no_focused_control_hides_under_the_way_back(real_site: Path, chrome: Ch
     assert found == {page: [True, 0] for page in COMMANDS}
 
 
+#: Whether the focused link's ring (its box grown by the outline's width and offset) lies inside
+#: the wide side list's box, which clips what overflows it.
+RING = """(() => {
+  const side = document.querySelector('.side-d'), a = document.activeElement;
+  const cs = getComputedStyle(a), grow = parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset);
+  const r = a.getBoundingClientRect(), box = side.getBoundingClientRect();
+  return [side.contains(a), cs.outlineStyle, r.left - grow >= box.left + side.clientLeft,
+          r.right + grow <= box.left + side.clientLeft + side.clientWidth];
+})()"""
+
+
+def test_a_focused_link_in_the_wide_side_list_shows_its_whole_ring(
+        real_site: Path, chrome: Chrome) -> None:
+    chrome.load((real_site / "dosbox-x/reference/session/start.html").as_uri(), 1440, 900)
+    chrome.answer("document.querySelector('.menubar nav a:last-child').focus()")
+    chrome.ws.call("Input.dispatchKeyEvent", type="keyDown", key="Tab", code="Tab",
+                   windowsVirtualKeyCode=9)
+    assert chrome.answer(RING) == [True, "solid", True, True]
+
+
 def test_a_page_the_width_case_measures_exists(real_site: Path) -> None:
     assert [p for p in KINDS if not (real_site / p).is_file()] == []
 

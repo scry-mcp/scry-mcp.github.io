@@ -308,6 +308,7 @@ figure.shot figcaption{margin-top:var(--s3);font-size:.9375rem;color:var(--muted
 @media (min-width:960px){
   .side{position:sticky;top:72px;align-self:start}.side-m{display:none}
   .side-d{display:block;max-height:calc(100vh - 88px);overflow-y:auto;scrollbar-width:thin}
+  .side-d a:focus-visible{outline-offset:-2px}
   .side li a{min-height:36px}.side ul.sub a{min-height:0}}
 /* the section being read, marked in the list as the page's script follows the reader */
 .side ul.sub a[aria-current]{color:var(--fg);box-shadow:inset 2px 0 0 var(--red)}
