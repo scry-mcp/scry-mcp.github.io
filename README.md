@@ -1,17 +1,11 @@
 # scry-mcp.github.io
 
 This repository builds the SCRY site from the SCRY repositories' own documents. The site has a
-home, one page per tool of each server, one page per demo with its clip moving, and every other
-public document. Every word about a server is read out of that server's repository at build
-time, so a rebuilt site says what the repositories say.
+home, a page per tool of each server, a page per demo with its clip moving, and every other
+public document. Every word about a server is read from its repository at build time.
 
-The site's own words are few:
-
-- `scry_site/templates/landing.html`: the home's hero, section headings and leads.
-- `scry_site/home.py`: the hero's two moments, the labels of the request under the picture,
-  and the install steps' titles.
-- `scry_site/build.py`: the page titles, the home's description and the reference page's lead.
-- `scry_site/templates/page.html`: the navigation and the foot.
+The site's own words are in its templates (`scry_site/templates/`) and in the modules that
+build each kind of page: `home.py`, `demos.py`, `reference.py` and `build.py` in `scry_site/`.
 
 ## Build it
 
@@ -52,8 +46,8 @@ In the reference:
 - `REFERENCE.md` without its generated index, an index entry naming a page that is not tracked
   or is named `index`, or a page in `docs/reference/` the index does not list;
 - a tool's entry that does not open with its name, one sentence and its signature;
-- an entry whose sections are not Try it, an optional table of modes, Arguments, What comes
-  back, What it refuses, Why it works this way and Related tools, in that order;
+- an entry whose sections are not, in order, Try it, modes (optional), Arguments, What comes
+  back, What it refuses, Why it works this way and Related tools;
 - one tool with two entries.
 
 In a demo's `README.md`:
@@ -64,10 +58,12 @@ In a demo's `README.md`:
 - no single transcript block of numbered steps;
 - a demo folder named outside lowercase letters, digits, `_` and `-`.
 
-An example, on a tool's page or a demo's, must be the request, its quote, one or two calls each
-with its reply, a sentence reading the reply, and the whole reply folded. A build also stops
-on a page without a title, on scry-core's `## Credits` not being the one credits line, and on
-an `--out` that names a file, the directory of the checkouts, or a place inside one.
+An example is on a tool's page or a demo's. It must be the request, its quote, one or two calls
+each with its reply, a sentence reading the reply, and the whole reply folded.
+
+A build also stops on a page without a title, and on scry-core's `## Credits` not being the one
+credits line. It refuses an `--out` that names a file, the checkouts' directory or a place in
+one, or a directory holding files no build made.
 
 It lists every one of these:
 
