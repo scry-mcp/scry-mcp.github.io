@@ -7,6 +7,7 @@ nothing, prints INVALID with the reason, and exits 3.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import html
 import json
 import posixpath
@@ -14,37 +15,17 @@ import re
 import shutil
 import sys
 import tempfile
+from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
 
-from scry_site import render, sources
+from scry_site import demos, example, home, motion, reference, render, sources
 from scry_site.check import check
-from scry_site.sources import (
-    GROUPS,
-    Invalid,
-    Page,
-    Repo,
-    collect,
-    flow,
-    install,
-    lede,
-    platforms,
-    read,
-    repos,
-    under_heading,
-)
+from scry_site.sources import GROUPS, Family, Invalid, Page, Repo, collect, read, repos
 
-TAGLINE = "MCP servers that hold MAME or DOSBox-X open and answer by name."
-# The landing's console: which demo, from which call, how many calls.
-FLOW = ("dosbox-x", "bricks", "symbols_load", 3)
+TAGLINE = "MCP servers that hold MAME or DOSBox-X open so your AI client can debug the program " \
+          "inside."
 _KEY = re.compile(r"\{\{([a-z_]+)\}\}")
-#: A demo's still, and the loop recorded after it: what every demo page carries beside its README.
-STILL, LOOP = "screen.png", "loop.mp4"
-DEMO_MEDIA = (STILL, LOOP)
-#: A demo page's still, alone in its paragraph: where its loop plays. Any other attribute the
-#: source gives the picture (a title, a size) comes along, and its `alt` is read wherever it sits.
-_STILL = re.compile(rf'<p><img [^>]*src="{re.escape(STILL)}"[^>]*></p>')
-_ALT = re.compile(r'alt="([^"]*)"')
 
 
 def template(name: str, **fill: str) -> str:
@@ -53,14 +34,9 @@ def template(name: str, **fill: str) -> str:
     return _KEY.sub(lambda m: fill[m[1]], text)
 
 
-def fold(sh: str) -> str:
-    """Break a line that hands a command to uv after its `--`, so every card's lines fit alike."""
-    return re.sub(r"^(?!\s*#)(.* -- )(uv run .*)$", r"\1\\\n  \2", sh, flags=re.M)
-
-
 def credits_line(core: Repo) -> str:
     """The credits line every SCRY README closes with, rendered once for every page's footer."""
-    body = under_heading(read(core, "README.md"), "Credits", "scry-core/README.md").strip()
+    body = sources.section(read(core, "README.md"), "Credits", "scry-core/README.md").strip()
     if "\n" in body or not body.startswith("Developed by Optimiza"):
         raise Invalid("scry-core/README.md: '## Credits' must hold one line, starting "
                       f"'Developed by Optimiza'; it holds: {body[:80]!r}")
@@ -80,33 +56,14 @@ def describe(page: Page) -> str:
             text = render.plain(block)
             if not text:
                 continue
-            if len(text) <= 200:
-                return text
-            return text[:200].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+            return short(text)
     return page.title
 
 
-def is_virtual(page: Page) -> bool:
-    """A page made from part of its source (the getting-started page), which has no twin."""
-    return page.out.endswith("getting-started.html")
-
-
-def playing(body: str, where: str) -> str:
-    """`body` with the demo's still replaced by its loop: the still is the video's poster and,
-    under `prefers-reduced-motion`, the picture shown in the video's place. The README's own
-    words name both."""
-    def fill(m: re.Match[str]) -> str:
-        found = _ALT.search(m[0])
-        alt = found[1] if found else ""
-        return (f'<figure class="screen">'
-                f'<video src="{LOOP}" poster="{STILL}" autoplay muted loop playsinline '
-                f'preload="metadata" role="img" aria-label="{alt}"></video>'
-                f'<img src="{STILL}" alt="{alt}" /></figure>')
-    body, found = _STILL.subn(fill, body)
-    if found != 1:
-        raise Invalid(f"{where}: the page shows its still, alone in a paragraph, exactly once "
-                      f"(found {found}), and that is where the demo's loop plays")
-    return body
+def short(text: str) -> str:
+    if len(text) <= 200:
+        return text
+    return text[:200].rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
 
 def llms_txt(rs: list[Repo], pages: list[Page]) -> str:
@@ -114,8 +71,7 @@ def llms_txt(rs: list[Repo], pages: list[Page]) -> str:
     lines = ["# SCRY", "", f"> {TAGLINE}", ""]
     order = {g: i for i, (g, _) in enumerate((*GROUPS, ("core", "")))}
     for r in rs:
-        ps = sorted((p for p in pages if p.repo is r and not is_virtual(p)),
-                    key=lambda p: (order[p.group], p.order))
+        ps = sorted((p for p in pages if p.repo is r), key=lambda p: (order[p.group], p.order))
         lines += [f"## {r.label}", ""]
         lines += [f"- [{p.title}]({twin_path(p)}): {describe(p)}" for p in ps]
         lines.append("")
@@ -126,88 +82,82 @@ def twin_path(page: Page) -> str:
     return page.out.removesuffix(".html") + ".md"
 
 
-def sidebar(pages: list[Page], current: Page) -> str:
-    here = posixpath.dirname(current.out)
+def rel(target: str, out: str) -> str:
+    return posixpath.relpath(target, posixpath.dirname(out) or ".")
+
+
+def crumbs(out: str, trail: list[tuple[str, str]]) -> str:
+    """`SCRY / ... / here`: each step but the last a link."""
+    steps = [f'<a href="{rel(href, out)}">{html.escape(text)}</a>' for text, href in trail[:-1]]
+    steps.append(f"<span>{html.escape(trail[-1][0])}</span>")
+    return f'<p class="crumbs">{"<span aria-hidden=true>/</span>".join(steps)}</p>'
+
+
+Item = tuple[str, str, bool, list[tuple[str, str]]]
+
+
+def side(title: str, about: str, summary: str, groups: list[tuple[str, list[Item]]], kind: str,
+         out: str) -> str:
+    """The side list: closed above the page on a phone, open beside it on a desktop. The page
+    that is open carries its own sections nested under it."""
     blocks = []
-    for r in dict.fromkeys(p.repo for p in pages if p.group in dict(GROUPS)):
-        groups = []
-        for group, group_name in GROUPS:
-            ps = sorted((p for p in pages if p.repo is r and p.group == group),
-                        key=lambda p: p.order)
-            links = "".join(
-                f'<li><a{" class=on aria-current=page" if p is current else ""} '
-                f'href="{posixpath.relpath(p.out, here)}">{html.escape(p.label)}</a></li>'
-                for p in ps)
-            if links:
-                groups.append(f'<li class="grp"><span>{group_name}</span><ul>{links}</ul></li>')
-        state = " open" if current.repo is r else ""
-        blocks.append(f'<details{state}><summary>{r.label}</summary><ul>{"".join(groups)}</ul>'
-                      "</details>")
-    return f'<nav class="side" id="pages" aria-label="Pages">{"".join(blocks)}</nav>'
+    for name, items in groups:
+        rows = []
+        for text, href, current, subs in items:
+            here = " aria-current=page" if current else ""
+            nested = "".join(f'<li><a href="#{i}">{html.escape(t)}</a></li>' for i, t in subs)
+            rows.append(f'<li><a{here} href="{rel(href, out)}">{html.escape(text)}</a>'
+                        f'{f"<ul class=sub>{nested}</ul>" if nested else ""}</li>')
+        head = f'<p class="grp">{html.escape(name)}</p>' if name else ""
+        blocks.append(f'{head}<ul>{"".join(rows)}</ul>')
+    lists = "".join(blocks)
+    note = f'<p class="about">{about}</p>' if about else ""
+    return (f'<nav class="side {kind}" aria-label="{html.escape(title)}">'
+            f'<details class="side-m"><summary>{html.escape(summary)}</summary>{note}{lists}'
+            f'</details><div class="side-d"><p>{html.escape(title)}</p>{note}{lists}</div></nav>')
 
 
-def shell(*, title: str, description: str, out: str, main: str, credits: str,
-          side: str = "", right: str = "", kind: str = "doc") -> str:
-    root = posixpath.relpath(".", posixpath.dirname(out)) if posixpath.dirname(out) else "."
-    pages = '<a href="#pages">Pages</a>' if side else ""
+def doc_side(pages: list[Page], current: Page, subs: list[tuple[str, str]]) -> str:
+    """The side list of a repository's documents: its README, reference, demos, contributing."""
+    groups = []
+    named = (*GROUPS, ("core", ""))
+    for group, label in named:
+        ps = sorted((p for p in pages if p.repo is current.repo and p.group == group),
+                    key=lambda p: p.order)
+        if ps:
+            groups.append((label, [(p.label, p.out, p is current, subs if p is current else [])
+                                   for p in ps]))
+    count = sum(len(items) for _, items in groups)
+    return side(current.repo.label, "", f"{current.repo.label}: {count} pages", groups, "docs",
+                current.out)
+
+
+def tool_side(f: Family, ts: list[reference.Tool], current: str, out: str,
+              subs: list[tuple[str, str]]) -> str:
+    """The side list of a family: its sentence, then its tools, the open one with its
+    sections."""
+    items = [(t.name, t.out, t.name == current, subs if t.name == current else []) for t in ts]
+    top = [(f"About {f.page.label}", f.page.out, not current, [] if current else subs)]
+    return side(f.page.label, inline(f.about), f"{f.page.label}: {len(ts)} tools",
+                [("", top), ("Tools", items)], "tools", out)
+
+
+def shell(*, title: str, description: str, out: str, body: str, credits: str, head: str = "",
+          nav: str = "") -> str:
+    root = rel(".", out) if posixpath.dirname(out) else "."
+    on = {k: " aria-current=page" if nav == k else "" for k in ("demos", "reference")}
     return template("page.html", title=html.escape(title), description=html.escape(description),
-                    root=root, kind=kind, side=side, main=main, right=right, credits=credits,
-                    pages=pages)
+                    root=root, head=f"<style>\n{head}\n</style>" if head else "", body=body,
+                    credits=credits, nav_demos=on["demos"], nav_reference=on["reference"])
 
 
-def getting_started(rs: list[Repo]) -> list[Page]:
-    """Each server's own first steps, as its front door writes them."""
-    out = []
-    for r in rs:
-        if r.key == "core":
-            continue
-        md = read(r, "README.md")
-        where = f"{r.name}/README.md"
-        body = f"# Getting started with {r.label}\n\n" + "".join(
-            f"## {h}\n{under_heading(md, h, where)}" for h in ("Two minutes to a first answer",
-                                                         "Platforms"))
-        out.append(Page(r, "README.md", f"{r.key}/getting-started.html", "overview", body,
-                        title=f"Getting started with {r.label}", label="Getting started",
-                        order=1))
-    return out
+def framed(side_html: str, main: str) -> str:
+    return (f'<div class="wrap docframe">{side_html}<main id="content" class="doc">{main}</main>'
+            "</div>")
 
 
-def landing(rs: list[Repo], pages: list[Page]) -> str:
-    cards = []
-    for r in rs:
-        if r.key == "core":
-            continue
-        md = read(r, "README.md")
-        where = f"{r.name}/README.md"
-        needs, sh = install(md, where)
-        cards.append(
-            f'<article class="card"><h3>{r.label}</h3><p>{html.escape(lede(md, where))}</p>'
-            f'<p class="needs">{inline(needs)} Runs on {html.escape(platforms(md, where))}.</p>'
-            f'<pre tabindex="0"><code>{html.escape(fold(sh))}</code></pre>'
-            f'<p class="go"><a href="{r.key}/getting-started.html">Getting started</a> · '
-            f'<a href="{r.key}/index.html">The server</a> · '
-            f'<a href="{r.key}/reference/index.html">Reference</a> · '
-            f'<a href="https://github.com/scry-mcp/{r.name}">GitHub</a></p></article>')
-    by_demo: dict[str, list[Page]] = {}
-    for p in pages:
-        if p.group == "demos":
-            by_demo.setdefault(posixpath.basename(posixpath.dirname(p.src)), []).append(p)
-    shots = []
-    for ps in by_demo.values():
-        label = ps[0].label
-        here = posixpath.dirname(ps[0].out)
-        img, loop = posixpath.join(here, STILL), posixpath.join(here, LOOP)
-        servers = " · ".join(f'<a href="{p.out}">{p.repo.label}</a>' for p in ps)
-        shots.append(f'<div class="shot"><a href="{ps[0].out}" aria-hidden="true" tabindex="-1">'
-                     f'<span class="crt"><video src="{loop}" poster="{img}" autoplay muted loop '
-                     f'playsinline preload="metadata"></video>'
-                     f'<img src="{img}" alt="" loading="lazy"></span></a>'
-                     f"<b>{html.escape(label)}</b><small>{servers}</small></div>")
-    key, demo, first, calls = FLOW
-    server = next(r for r in rs if r.key == key)
-    console = flow(read(server, "README.md"), demo, first, calls, f"{server.name}/README.md")
-    return template("landing.html", flow_label=f"the {demo} demo, on {server.label}",
-                    flow=html.escape(console), cards="".join(cards), demos="".join(shots))
+def solo(main: str) -> str:
+    return f'<main id="content" class="wrap doc solo">{main}</main>'
 
 
 def guard(base: Path, out: Path) -> None:
@@ -222,53 +172,234 @@ def guard(base: Path, out: Path) -> None:
             raise Invalid(f"--out {out} is inside the {r.name} checkout")
 
 
+class Site:
+    """One build: the sources read, the pages rendered, the files to copy."""
+
+    def __init__(self, rs: list[Repo]) -> None:
+        self.rs = rs
+        self.pages, self.families, self.files = collect(rs)
+        self.links = render.Links({(p.repo.key, p.src): p.out for p in self.pages}, self.files)
+        self.tools: dict[str, list[reference.Tool]] = {}
+        self.tool_pages: dict[tuple[str, str], str] = {}
+        for f in self.families:
+            ts = reference.tools(f)
+            self.tools[f.page.out] = ts
+            self.links.anchors.update(reference.anchors(f, ts))
+            for t in ts:
+                key = (f.page.repo.key, t.name)
+                if key in self.tool_pages:
+                    raise Invalid(f"{f.page.repo.name}: two entries of `{t.name}`")
+                self.tool_pages[key] = t.out
+        self.credits = credits_line(self.repo("core"))
+        self.rendered: dict[str, str] = {}
+        self.clips: dict[str, motion.Clip] = {}
+
+    def repo(self, key: str) -> Repo:
+        return next(r for r in self.rs if r.key == key)
+
+    def label(self, key: str) -> str:
+        return self.repo(key).label
+
+    def writers(self, page: Page, *, virtual: bool = False) -> tuple[Callable[[str], str],
+                                                                      Callable[[str], str]]:
+        """Inline and block markdown, rendered for `page` with its links resolved."""
+        def one(md: str) -> str:
+            return render.rewrite(inline(md), page, self.links, virtual=virtual)
+
+        def many(md: str) -> str:
+            return render.rewrite(render.markdown(md), page, self.links, virtual=virtual)
+        return one, many
+
+    def clip(self, page: Page) -> motion.Clip:
+        src = posixpath.join(posixpath.dirname(page.src), motion.LOOP)
+        if src not in self.files[page.repo.key]:
+            raise Invalid(f"{page.repo.name}: {src} is not tracked, and every demo is shown moving")
+        if page.out not in self.clips:
+            self.clips[page.out] = motion.clip(page.repo.root / src, f"{page.repo.name}/{src}")
+        return self.clips[page.out]
+
+    def put(self, page_out: str, title: str, description: str, body: str, *, head: str = "",
+            nav: str = "") -> None:
+        self.rendered[page_out] = shell(title=title, description=description, out=page_out,
+                                        body=body, credits=self.credits, head=head, nav=nav)
+
+    def demo_list(self) -> list[home.Demo]:
+        """Every demo once, by name: the hero's first, then each front door's order."""
+        said = {r.key: sources.demo_sentences(read(r, "README.md"), f"{r.name}/README.md")
+                for r in self.rs if r.key != "core"}
+        hero_demo = sources.lead(read(self.repo(home.HERO), "README.md"),
+                                 f"{self.repo(home.HERO).name}/README.md").demo
+        server_order = {k: i for i, (k, _, _) in enumerate(sources.SERVERS)}
+
+        def folder(p: Page) -> str:
+            return posixpath.basename(posixpath.dirname(p.src))
+        by_name: dict[str, list[Page]] = {}
+        for p in sorted((p for p in self.pages if p.group == "demos"),
+                        key=lambda p: (folder(p) != hero_demo, server_order[p.repo.key], p.order)):
+            by_name.setdefault(folder(p), []).append(p)
+        found = []
+        for name, ps in by_name.items():
+            first = ps[0]
+            says = said[first.repo.key].get(name)
+            if says is None:
+                raise Invalid(f"{first.repo.name}/README.md: 'See it run' does not list "
+                              f"demos/{name}/")
+            text = inline(says)
+            text = text[:1].upper() + text[1:]
+            found.append(home.Demo(name, first.label, text, tuple(ps), self.clip(first)))
+        return found
+
+    def render_pages(self, ds: list[home.Demo]) -> None:
+        for p in self.pages:
+            if p.group == "demos":
+                self.demo_page(p, ds)
+            elif p.out in self.tools:
+                self.family_pages(next(f for f in self.families if f.page is p))
+            else:
+                one, many = self.writers(p)
+                body = many(p.markdown)
+                self.put(p.out, f"{p.title} · SCRY", describe(p),
+                         framed(doc_side(self.pages, p, render.sections(body)), body))
+
+    def family_pages(self, f: Family) -> None:
+        p = f.page
+        server = self.label(p.repo.key)
+        ts = self.tools[p.out]
+        one, many = self.writers(p, virtual=True)
+        own = many(reference.without_entries(p.markdown))
+        trail = [("SCRY", "index.html"), (server, f"{p.repo.key}/index.html"),
+                 ("Reference", f"{p.repo.key}/reference/index.html")]
+        body = reference.family_main(f, ts, own, crumbs(p.out, [*trail, (p.label, p.out)]), one)
+        self.put(p.out, f"{p.label} · SCRY for {server}", describe(p),
+                 framed(tool_side(f, ts, "", p.out, render.sections(body)), body),
+                 nav="reference")
+        for t in ts:
+            tp = t.page
+            one, many = self.writers(tp, virtual=True)
+            body = reference.main(t, server=server, server_key=p.repo.key,
+                                  crumbs=crumbs(t.out, [*trail, (p.label, p.out), (t.name, t.out)]),
+                                  inline=one, block=many)
+            subs = [(reference.slug(title), title) for title, _ in t.sections]
+            self.put(t.out, f"{t.name} · SCRY for {server}", render.plain(t.what),
+                     framed(tool_side(f, ts, t.name, t.out, subs), body), nav="reference")
+
+    def demo_page(self, p: Page, ds: list[home.Demo]) -> None:
+        server = self.label(p.repo.key)
+        where = f"{p.repo.name}/{p.src}"
+        one, many = self.writers(p)
+        here = posixpath.dirname(p.out)
+        cards = []
+        for d in ds:
+            if p in d.pages or all(q.repo is not p.repo for q in d.pages):
+                continue
+            # this server's other demos, each card leading to this server's page of it
+            mine = tuple(sorted(d.pages, key=lambda q: q.repo is not p.repo))
+            cards.append(home.card(dataclasses.replace(d, pages=mine, clip=self.clip(mine[0])),
+                                   here))
+        more = "".join(cards)
+        trail = [("SCRY", "index.html"), (server, f"{p.repo.key}/index.html"),
+                 ("Demos", "index.html#demos"), (p.label, p.out)]
+        body, keys = demos.main(p, sources.motion(p.markdown, where), self.clip(p), server=server,
+                                crumbs=crumbs(p.out, trail), more=more, inline=one, block=many)
+        self.put(p.out, f"{p.label} · SCRY for {server}", describe(p), solo(body), head=keys,
+                 nav="demos")
+
+    def reference_index(self) -> None:
+        """One page listing both servers' families: where the bar's Reference leads."""
+        out = "reference/index.html"
+        cols = []
+        for r in self.rs:
+            if r.key == "core":
+                continue
+            fams = [f for f in self.families if f.page.repo is r]
+            rows = "".join(f'<li><a href="{rel(f.page.out, out)}">{html.escape(f.page.label)}</a>'
+                           f"<span>{inline(f.about)}</span></li>" for f in fams)
+            n = sum(len(self.tools[f.page.out]) for f in fams)
+            cols.append(f'<section><h2 id="{r.key}">{html.escape(r.label)}</h2>'
+                        f'<p class="muted">{n} tools in {len(fams)} families. '
+                        f'<a href="{rel(f"{r.key}/reference/index.html", out)}">The rules the '
+                        f'{html.escape(r.label)} tools share</a>.</p>'
+                        f'<ul class="toollist fams">{rows}</ul></section>')
+        body = (crumbs(out, [("SCRY", "index.html"), ("Reference", out)])
+                + "<h1>Reference</h1><p class=lead>Every tool of both servers has a page, with an "
+                "example you can try.</p>" + f'<div class="refcols">{"".join(cols)}</div>')
+        self.put(out, "Reference · SCRY", "Every tool of the two SCRY servers, by family.",
+                 solo(body), nav="reference")
+
+    def home(self, ds: list[home.Demo]) -> None:
+        servers = []
+        for r in self.rs:
+            if r.key == "core":
+                continue
+            readme_page = next(p for p in self.pages if p.repo is r and p.src == "README.md")
+            md = readme_page.markdown
+            where = f"{r.name}/README.md"
+            at_home = Page(r, "README.md", "index.html", "overview", md)
+            one, many = self.writers(at_home)
+            needs, clone = sources.get_server(md, where)
+            q = sources.first_question(md, where)
+            demo_pages = [p for p in self.pages if p.repo is r and p.group == "demos"]
+            if not demo_pages:
+                raise Invalid(f"{r.name}: no demo, and the home leads to each server's demos")
+            servers.append(home.Server(
+                r, sources.lede(md, where), one(needs), example.pane("sh", clone.code),
+                tuple((c.name, one(c.says), c.fence.language, c.fence.code)
+                      for c in sources.clients(md, where)),
+                (many(q.before), one(q.ask), many(q.after)),
+                tuple(sources.Ask(a.question, a.tools, one(a.says))
+                      for a in sources.asks(md, where)),
+                f"{r.key}/reference/index.html", demo_pages[0].out))
+        hero_repo = self.repo(home.HERO)
+        hmd = read(hero_repo, "README.md")
+        led = sources.lead(hmd, f"{hero_repo.name}/README.md")
+        page = next((p for d in ds for p in d.pages
+                     if d.name == led.demo and p.repo is hero_repo), None)
+        if page is None:
+            raise Invalid(f"{hero_repo.name}/README.md: its lead shows demos/{led.demo}/, which "
+                          "has no page")
+        d = next(d for d in ds if page in d.pages)
+        d = dataclasses.replace(d, pages=(page,), clip=self.clip(page))
+        m = sources.motion(page.markdown, f"{hero_repo.name}/{page.src}")
+        fill, css = home.slots(servers, ds, self.tool_pages)
+        body = template("landing.html", hero=home.hero(led.rows, d, led.alt, len(m.moments)),
+                        **fill)
+        keys = motion.keyframes(d.clip, m.ms, f"{hero_repo.name}/{d.pages[0].src}")
+        self.put("index.html", "SCRY: see inside the machine", TAGLINE, body,
+                 head=f"{keys}\n{css}")
+
+
 def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
-    pages, files = collect(rs)
-    pages += getting_started(rs)
-    links = render.Links({(p.repo.key, p.src): p.out for p in pages
-                          if not p.out.endswith("getting-started.html")}, files)
-    credits = credits_line(next(r for r in rs if r.key == "core"))
-    rendered: dict[str, str] = {}
-    twins: dict[str, str] = {}
-    for p in pages:
-        body = render.rewrite(render.markdown(p.markdown), p, links,
-                              virtual=p.out.endswith("getting-started.html"))
-        if p.group == "demos":
-            body = playing(body, f"{p.repo.name}/{p.src}")
-        if not is_virtual(p):
-            twins[twin_path(p)] = render.twin(p, links)
-        rendered[p.out] = shell(title=f"{p.title} · SCRY", description=describe(p),
-                                out=p.out, main=body, credits=credits, side=sidebar(pages, p),
-                                right=render.toc(body))
-    if links.broken:
+    site = Site(rs)
+    ds = site.demo_list()
+    site.render_pages(ds)
+    site.reference_index()
+    site.home(ds)
+    if site.links.broken:
         raise Invalid("links in the sources to paths no repository tracks:\n  "
-                      + "\n  ".join(sorted(links.broken)))
-    rendered["index.html"] = shell(
-        title="SCRY: drive and debug the program inside the emulator",
-        description=TAGLINE,
-        out="index.html", main=landing(rs, pages), credits=credits, kind="landing")
-    for rel, text in {**rendered, **twins, "llms.txt": llms_txt(rs, pages)}.items():
-        dest = into / rel
+                      + "\n  ".join(sorted(site.links.broken)))
+    twins = {twin_path(p): render.twin(p, site.links) for p in site.pages}
+    for path, text in {**site.rendered, **twins, "llms.txt": llms_txt(rs, site.pages)}.items():
+        dest = into / path
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8")
     roots = {r.key: r.root for r in rs}
     media = {(p.repo.key, posixpath.join(posixpath.dirname(p.src), name)):
              posixpath.join(posixpath.dirname(p.out), name)
-             for p in pages if p.group == "demos" for name in DEMO_MEDIA}
-    for (key, src), rel in {**links.copies, **media}.items():
-        if src not in files[key]:
+             for p in site.pages if p.group == "demos" for name in (motion.STILL, motion.LOOP)}
+    copies = {**site.links.copies, **media}
+    for (key, src), dest_rel in copies.items():
+        if src not in site.files[key]:
             raise Invalid(f"{key}: {src} is not tracked, and the site shows every demo's "
                           "screen and plays its loop")
-        (into / rel).parent.mkdir(parents=True, exist_ok=True)
+        (into / dest_rel).parent.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.copyfile(roots[key] / src, into / rel)
+            shutil.copyfile(roots[key] / src, into / dest_rel)
         except OSError as e:
             raise Invalid(f"cannot copy {key}/{src}: {e}") from e
     shutil.copytree(Path(str(resources.files("scry_site").joinpath("static"))), into,
                     dirs_exist_ok=True)
     (into / ".nojekyll").write_text("", encoding="utf-8")
-    return {"pages": len(rendered), "copied": len({**links.copies, **media}),
-            "links": check(into)}
+    return {"pages": len(site.rendered), "copied": len(copies), "links": check(into)}
 
 
 def build(base: Path, out: Path) -> dict[str, int]:

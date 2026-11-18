@@ -1,12 +1,35 @@
-<section class="hero">
-  <div class="pitch">
-    <img class="hero-logo" src="scry-logo.png" alt="" width="420" height="156">
-    <p class="kicker">MCP servers for emulated machines</p>
-    <h1>Drive and debug the program inside the emulator.</h1>
-    <p class="sub">One MAME or one DOSBox-X stays open. Your MCP client stops it where it means to, reads it by name, drives its inputs and proves they landed, and every answer says what it examined.</p>
-    <p class="cta"><a class="btn" href="#servers">Pick a server</a> <a class="btn ghost" href="#demos">See the demos</a></p>
-  </div>
-  <div class="console"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>{{flow_label}}</span></div><pre tabindex="0" aria-label="{{flow_label}}"><code>{{flow}}</code></pre></div>
+<main id="content">
+<div class="band"><section class="hero wrap">
+<div>
+<p class="kicker">MCP servers for MAME and DOSBox-X</p>
+<img class="logo" src="scry-logo.png" alt="SCRY" width="460" height="171">
+<h1>See inside the machine</h1>
+<p class="sub">SCRY holds an emulator open so your AI client can debug the program inside: stop it, read memory by name, press its inputs.</p>
+<p class="cta"><a class="btn" href="#install">Install</a> <a class="btn ghost" href="#demos"><span aria-hidden="true">&#9654;</span>See it run</a></p>
+</div>
+<div>{{hero}}</div>
+</section></div>
+<div class="wrap">
+<section id="install" class="install">
+<div class="section-h"><span class="n" aria-hidden="true">01</span><h2>Install</h2></div>
+<p class="lead">Three steps. Choose your emulator here and your client in step 2: every block changes to match.</p>
+{{install}}
 </section>
-<section id="servers"><h2>Pick a server</h2><div class="cards">{{cards}}</div></section>
-<section id="demos"><h2>See it run</h2><p class="lead">Each demo is a script its repository runs; the loop, the screen and the calls on its page are the last run's.</p><div class="shots">{{demos}}</div></section>
+<section id="ask">
+<div class="section-h"><span class="n" aria-hidden="true">02</span><h2>What you can ask</h2></div>
+<p class="lead">Plain questions. Your client turns each one into the tools under it.</p>
+{{asks}}
+<p class="more">Every tool, with an example you can try: <a href="reference/index.html">the reference</a>.</p>
+</section>
+<section id="demos">
+<div class="section-h"><span class="n" aria-hidden="true">03</span><h2>See it run</h2></div>
+<p class="lead">Each demo is a script its repository runs against the real emulator. The pictures move because they are that run.</p>
+{{demos}}
+</section>
+<section id="emulators">
+<div class="section-h"><span class="n" aria-hidden="true">04</span><h2>Two emulators, one way of asking</h2></div>
+<p class="lead">A tool both servers have means the same and answers the same. What differs is what the emulators themselves make different.</p>
+{{emulators}}
+</section>
+</div>
+</main>

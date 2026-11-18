@@ -1,33 +1,65 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" id="top">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="{{description}}">
-<meta name="color-scheme" content="dark light">
+<meta name="color-scheme" content="dark">
 <title>{{title}}</title>
 <link rel="icon" href="{{root}}/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="{{root}}/site.css">
+{{head}}
 </head>
-<body class="k-{{kind}}">
+<body>
 <a class="skip" href="#content">Skip to the content</a>
-<header class="top">
-  <a class="brand" href="{{root}}/index.html"><img src="{{root}}/scry-logo.png" alt="SCRY" width="81" height="30"></a>
-  <nav aria-label="Site">
-    <a href="{{root}}/mame/index.html">MAME</a>
-    <a href="{{root}}/dosbox-x/index.html">DOSBox-X</a>
-    <a href="{{root}}/core/index.html">Shared core</a>
-    <a href="https://github.com/scry-mcp">GitHub</a>
-  </nav>
+<header class="menubar">
+  <div class="wrap">
+    <a class="brand" href="{{root}}/index.html"><img src="{{root}}/scry-logo.png" alt="SCRY, home" width="76" height="28"></a>
+    <nav aria-label="Site">
+      <a href="{{root}}/index.html#install">Install</a>
+      <a href="{{root}}/index.html#demos"{{nav_demos}}>Demos</a>
+      <a href="{{root}}/reference/index.html"{{nav_reference}}>Reference</a>
+      <a href="https://github.com/scry-mcp">GitHub</a>
+    </nav>
+  </div>
 </header>
-<p class="to-pages">{{pages}}</p>
-<div class="frame">
-<main class="doc" id="content">
-{{main}}
-</main>
-{{side}}
-{{right}}
-</div>
-<footer class="foot">{{credits}}</footer>
+{{body}}
+<footer class="foot">
+  <div class="wrap">
+    <ul class="keybar">
+      <li><a href="{{root}}/index.html#install"><b>F1</b><span>Install</span></a></li>
+      <li><a href="{{root}}/index.html#ask"><b>F2</b><span>Ask</span></a></li>
+      <li><a href="{{root}}/index.html#demos"><b>F3</b><span>Demos</span></a></li>
+      <li><a href="{{root}}/reference/index.html"><b>F4</b><span>Reference</span></a></li>
+      <li><a href="https://github.com/scry-mcp"><b>F5</b><span>GitHub</span></a></li>
+    </ul>
+    <div class="foot-id">
+      <img src="{{root}}/scry-logo.png" alt="" width="65" height="24">
+      <p>MCP servers for MAME and DOSBox-X: <a href="https://github.com/scry-mcp/scry-mame">scry-mame</a>, <a href="https://github.com/scry-mcp/scry-dosbox-x">scry-dosbox-x</a>, and the package they share, <a href="https://github.com/scry-mcp/scry-core">scry-core</a>.</p>
+    </div>
+    <p>{{credits}}</p>
+    <p class="eject"><span aria-hidden="true">&#9632; STOP</span><a href="#top" aria-label="Back to the top">&#9664;&#9664; REWIND</a></p>
+  </div>
+</footer>
+<script>
+/* Copy buttons where the clipboard exists, and the moments under a picture lit in time with it.
+   The page reads whole without this script. */
+if (navigator.clipboard) for (const e of document.querySelectorAll("[data-copy]")) {
+  const pre = e.matches("pre"), b = document.createElement("button");
+  b.className = "copy"; b.type = "button"; b.textContent = "Copy";
+  b.onclick = () => navigator.clipboard.writeText((pre ? e : e.querySelector("p")).innerText.replace(/^\$ /gm, "")).then(() => {
+    b.textContent = "Copied"; b.classList.add("done");
+    setTimeout(() => { b.textContent = "Copy"; b.classList.remove("done"); }, 1500); });
+  (pre ? e.parentElement.firstElementChild : e).append(b);
+}
+const timed = document.querySelector(".timed");
+if (timed && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  const img = timed.querySelector("img"), go = () => {
+    timed.classList.remove("live");
+    img.onload = () => { void timed.offsetWidth; timed.classList.add("live"); };
+    img.src = img.src; };
+  go(); document.addEventListener("visibilitychange", () => document.hidden || go());
+}
+</script>
 </body>
 </html>

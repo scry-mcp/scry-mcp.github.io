@@ -1,11 +1,12 @@
-"""Which markdown of the three repositories becomes which page, and what the landing takes."""
+"""Which markdown of the three repositories becomes which page, and what the home takes."""
 
 from __future__ import annotations
 
 import functools
+import html
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from markdown_it import MarkdownIt
@@ -38,14 +39,27 @@ class Page:
     order: int = 0
 
 
+@dataclass
+class Family:
+    """A page of `docs/reference/`: its tools, in its own order, and the sentence the index
+    gives it."""
+
+    page: Page
+    about: str
+    tools: list[str] = field(default_factory=list)
+
+
 SERVERS = (("mame", "scry-mame", "MAME"), ("dosbox-x", "scry-dosbox-x", "DOSBox-X"))
 GROUPS = (("overview", "Overview"), ("demos", "Demos"), ("reference", "Reference"),
           ("contributing", "Contributing"))
+#: A tool's entry in its family's page, between the markers the reference generator writes.
+ENTRY = re.compile(r"<!-- scry-reference:begin (\w+) -->\n(.*?)<!-- scry-reference:end \1 -->\n?",
+                   re.S)
 
 
 def repos(base: Path) -> list[Repo]:
     found = [Repo(k, n, label, base / n) for k, n, label in SERVERS]
-    found.append(Repo("core", "scry-core", "Shared core", base / "scry-core"))
+    found.append(Repo("core", "scry-core", "scry-core", base / "scry-core"))
     for r in found:
         if not (r.root / "README.md").is_file():
             raise Invalid(f"no {r.name} checkout at {r.root}")
@@ -97,68 +111,225 @@ def masked_inline(md: str) -> str:
     return _SPAN.sub(lambda m: _blank(m[0]), masked(md))
 
 
+def text_of(fragment: str) -> str:
+    """An HTML fragment as one line of text."""
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", fragment)).split())
+
+
 def title_of(md: str, where: str) -> str:
-    m = re.search(r"^# (.+)$", masked(md), re.M)
-    if not m:
-        raise Invalid(f"{where}: no level-one heading ('# ...') to title the page")
-    return m[1].replace("`", "").strip()
+    """The page's title: its `# ` heading, or the text of the `<h1>` a front door opens with."""
+    hidden = masked(md)
+    m = re.search(r"^# (.+)$", hidden, re.M)
+    if m:
+        return m[1].replace("`", "").strip()
+    m = re.search(r"\A\s*<h1[^>]*>(.*?)</h1>", hidden, re.S)
+    if not m or not text_of(m[1]):
+        raise Invalid(f"{where}: no level-one heading ('# ...' or an opening '<h1>') to title "
+                      "the page")
+    return text_of(m[1])
 
 
-def under_heading(md: str, heading: str, where: str) -> str:
-    m = re.search(rf"^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", masked(md), re.M | re.S)
+def section(md: str, heading: str, where: str, level: int = 2) -> str:
+    """The text under `heading` at `level`, up to the next heading of that level or higher."""
+    hashes = "#" * level
+    m = re.search(rf"^{hashes} {re.escape(heading)}\n(.*?)(?=^#{{1,{level}}} |\Z)", masked(md),
+                  re.M | re.S)
     if not m:
-        raise Invalid(f"{where}: no section '## {heading}'")
+        raise Invalid(f"{where}: no section '{hashes} {heading}'")
     return md[m.start(1):m.end(1)]
 
 
-def lede(md: str, where: str) -> str:
-    m = re.search(r"^\*\*(.+?)\*\*", masked(md), re.M | re.S)
+def marked(md: str, kind: str, label: str, where: str) -> str:
+    """What sits between `<!-- {kind}:begin {label} -->` and its `end` marker."""
+    tail = f" {label}" if label else ""
+    m = re.search(rf"<!-- {kind}:begin{tail} -->\n(.*?)<!-- {kind}:end{tail} -->", md, re.S)
     if not m:
-        raise Invalid(f"{where}: no bold opening sentence ('**...**' at the start of a line)")
-    return " ".join(md[m.start(1):m.end(1)].split())
-
-
-def install(md: str, where: str) -> tuple[str, str]:
-    """The sentence that says what a first run needs, and the ```sh block that installs."""
-    body = under_heading(md, "Two minutes to a first answer", where)
-    m = re.search(r"\A\s*(.+?\.)(?=\s|$).*?```sh\n(.*?)```", body, re.S)
-    if not m:
-        raise Invalid(f"{where}: 'Two minutes to a first answer' does not open with a sentence "
-                      "and hold a ```sh block")
-    return " ".join(m[1].split()), m[2].strip()
-
-
-def platforms(md: str, where: str) -> str:
-    """The hosts the server runs on: the first clause of its 'Platforms' section."""
-    m = re.match(r"\s*([^.:\n\[\]`]+)[.:]", under_heading(md, "Platforms", where))
-    if not m:
-        raise Invalid(f"{where}: 'Platforms' does not open with the hosts it runs on")
+        raise Invalid(f"{where}: no '<!-- {kind}:begin{tail} -->' ... 'end' block")
     return m[1]
 
 
-def flow(md: str, name: str, first_call: str, calls: int, where: str) -> str:
-    """`calls` consecutive call blocks of a demo flow, from the first that calls `first_call`."""
-    m = re.search(rf"<!-- demo-flow:begin {name} -->\n(.*?)<!-- demo-flow:end {name} -->", md,
-                  re.S)
+def lede(md: str, where: str) -> str:
+    """The bold sentence a front door opens with, under its `<h1>`, as HTML."""
+    m = re.search(r"^<p align=\"center\"><b>(.+?)</b></p>$", md, re.M)
     if not m:
-        raise Invalid(f"{where}: no '<!-- demo-flow:begin {name} -->' ... 'end' block")
-    blocks = re.findall(r"^```\n(.*?)^```", m[1], re.M | re.S)
-    starts = [i for i, b in enumerate(blocks) if b.startswith(f"{first_call}(")]
-    if not starts or starts[0] + calls > len(blocks):
-        raise Invalid(f"{where}: the {name} flow has no {calls} calls from '{first_call}('")
-    return "\n".join(blocks[starts[0]:starts[0] + calls])
+        raise Invalid(f"{where}: no bold opening sentence ('<p align=\"center\"><b>...</b></p>')")
+    return m[1]
 
 
-def roster(reference_md: str, where: str) -> list[tuple[str, str]]:
-    """The families, `(page name, label)`, in the order of REFERENCE.md's generated index."""
-    m = re.search(r"<!-- scry-reference:begin index -->(.*?)<!-- scry-reference:end index -->",
-                  reference_md, re.S)
+def paragraphs(md: str) -> list[str]:
+    """The blocks of `md` separated by blank lines, a fenced block whole."""
+    blocks: list[str] = []
+    current: list[str] = []
+    fence = ""
+    for line in md.split("\n"):
+        if fence:
+            current.append(line)
+            if line.startswith(fence):
+                fence = ""
+            continue
+        if line.startswith("```"):
+            fence = "```"
+        if line.strip() or fence:
+            current.append(line)
+        elif current:
+            blocks.append("\n".join(current))
+            current = []
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+@dataclass(frozen=True)
+class Fence:
+    language: str
+    code: str
+
+
+def fence_of(block: str, where: str) -> Fence:
+    m = re.fullmatch(r"```(\w*)\n((?:(?!```).)*?)\n?```", block, re.S)
     if not m:
-        raise Invalid(f"{where}: no '<!-- scry-reference:begin index -->' ... 'end' block")
-    found = re.findall(rf"^- \[([^\]]+)\]\(docs/reference/({NAME})\.md\)", m[1], re.M)
+        raise Invalid(f"{where}: a fenced block was expected, found {block[:60]!r}")
+    return Fence(m[1], m[2])
+
+
+def get_server(md: str, where: str) -> tuple[str, Fence]:
+    """What `## Install` says a reader needs, and the ```sh block that clones the server."""
+    blocks = paragraphs(section(md, "Install", where).split("\n### ")[0])
+    if len(blocks) < 2 or not blocks[1].startswith("```sh"):
+        raise Invalid(f"{where}: '## Install' does not open with a sentence and a ```sh block")
+    return " ".join(blocks[0].split()), fence_of(blocks[1], where)
+
+
+@dataclass(frozen=True)
+class Client:
+    name: str
+    says: str
+    fence: Fence
+
+
+def clients(md: str, where: str) -> list[Client]:
+    """The README's block of clients, which scry-core's `install` table writes."""
+    body = marked(md, "scry-install", "", where)
+    # one paragraph, then one fenced block holding no other fence
+    found = re.findall(r"<details(?: open)?><summary>([^<]+)</summary>\n\n((?:(?!\n\n).)+)\n\n"
+                       r"(```\w*\n(?:(?!```).)*?```)\n\n</details>", body, re.S)
+    if not found or len(found) != body.count("<details"):
+        raise Invalid(f"{where}: the install block holds {body.count('<details')} clients and "
+                      f"{len(found)} read as a name, a sentence and a fenced block")
+    return [Client(n, " ".join(s.split()), fence_of(f, where)) for n, s, f in found]
+
+
+@dataclass(frozen=True)
+class Question:
+    before: str
+    ask: str
+    after: str
+
+
+def first_question(md: str, where: str) -> Question:
+    """`### Your first question`: what it needs, the prompt, what the client does."""
+    body = section(md, "Your first question", where, level=3)
+    blocks = paragraphs(body)
+    quotes = [i for i, b in enumerate(blocks) if b.startswith("> ")]
+    if len(quotes) != 1:
+        raise Invalid(f"{where}: 'Your first question' holds {len(quotes)} quoted prompts, not 1")
+    i = quotes[0]
+    ask = " ".join(line.removeprefix(">").strip() for line in blocks[i].split("\n"))
+    return Question("\n\n".join(blocks[:i]), ask, "\n\n".join(blocks[i + 1:]))
+
+
+@dataclass(frozen=True)
+class Ask:
+    question: str
+    tools: tuple[str, ...]
+    says: str
+
+
+def asks(md: str, where: str) -> list[Ask]:
+    """The questions of `## What you can ask`, each with its tools and its sentence."""
+    items = re.split(r"^- ", section(md, "What you can ask", where).strip(), flags=re.M)[1:]
+    # an item is one paragraph: words after the list would join its last sentence
+    found = [None if "\n\n" in i.strip() else
+             re.fullmatch(r'\*\*"(.+?)"\*\* ((?:`\w+`, )*`\w+`)\. (.+)', " ".join(i.split()))
+             for i in items]
+    if not found or not all(found):
+        raise Invalid(f"{where}: 'What you can ask' is not a list of '**\"question\"** `tool`. "
+                      "sentence' items")
+    return [Ask(m[1], tuple(re.findall(r"`(\w+)`", m[2])), m[3]) for m in found if m]
+
+
+def demo_sentences(md: str, where: str) -> dict[str, str]:
+    """The sentence `## See it run` gives each demo it lists."""
+    body = section(md, "See it run", where)
+    found = re.findall(rf"^- \[`demos/({NAME})/`\]\(demos/\1/\): (.+?)(?=\n- |\n\n|\Z)", body,
+                       re.M | re.S)
+    if not found:
+        raise Invalid(f"{where}: 'See it run' lists no '- [`demos/<name>/`](demos/<name>/): ...'")
+    return {name: " ".join(text.split()) for name, text in found}
+
+
+@dataclass(frozen=True)
+class Lead:
+    """A front door's lead: its demo's picture and the exchange under it."""
+
+    demo: str
+    alt: str
+    rows: tuple[tuple[str, str], ...]
+
+
+LEAD_ROWS = ("You ask", "Your client calls", "SCRY answers")
+
+
+def lead(md: str, where: str) -> Lead:
+    m = re.search(rf"<!-- demo-lead:begin ({NAME}) -->\n(.*?)<!-- demo-lead:end \1 -->", md, re.S)
+    if not m:
+        raise Invalid(f"{where}: no '<!-- demo-lead:begin <demo> -->' ... 'end' block")
+    demo, body = m[1], m[2]
+    alt = re.search(rf'<img src="demos/{demo}/loop\.webp" alt="([^"]*)"', body)
+    rows = tuple(re.findall(r'<tr><th align="left">([^<]+)</th><td>(.*?)</td></tr>', body))
+    if not alt or tuple(r[0] for r in rows[:3]) != LEAD_ROWS:
+        raise Invalid(f"{where}: the lead of {demo} does not show its loop.webp and the rows "
+                      f"{', '.join(LEAD_ROWS)}")
+    return Lead(demo, html.unescape(alt[1]), rows[:3])
+
+
+@dataclass(frozen=True)
+class Motion:
+    """A demo guide's moving picture: its alt text, its moments and how long each lasts."""
+
+    alt: str
+    moments: tuple[str, ...]
+    ms: tuple[int, ...]
+
+
+def motion(md: str, where: str) -> Motion:
+    body = marked(md, "demo-motion", "", where)
+    alt = re.search(r'<img src="loop\.webp" alt="([^"]*)"', body)
+    ms = re.search(r"<!-- moments-ms: (\d+(?:,\d+)*) -->", body)
+    moments = re.findall(r"^\d+\. (.+(?:\n(?!\d+\. |\n|<!--).+)*)", body, re.M)
+    if not alt or not ms:
+        raise Invalid(f"{where}: the motion block has no '<img src=\"loop.webp\" alt=...>' or no "
+                      "'<!-- moments-ms: ... -->'")
+    rest = re.sub(r"^<p[^>]*><picture>.*?</picture></p>$", "", body, flags=re.M | re.S)
+    rest = re.sub(r"^\d+\. .+(?:\n(?!\d+\. |\n|<!--).+)*", "", rest, flags=re.M)
+    if rest.replace(ms[0], "").strip():
+        raise Invalid(f"{where}: the motion block holds more than its picture, its moments and "
+                      "their times, and the page shows only those")
+    durations = tuple(int(x) for x in ms[1].split(","))
+    if len(durations) != len(moments):
+        raise Invalid(f"{where}: the motion block names {len(moments)} moments and times "
+                      f"{len(durations)}")
+    return Motion(html.unescape(alt[1]), tuple(" ".join(t.split()) for t in moments), durations)
+
+
+def roster(reference_md: str, where: str) -> list[tuple[str, str, str]]:
+    """The families, `(page name, label, sentence)`, in the order of REFERENCE.md's generated
+    index."""
+    body = marked(reference_md, "scry-reference", "index", where)
+    found = re.findall(rf"^- \[([^\]]+)\]\(docs/reference/({NAME})\.md\): (.+?) \[`", body, re.M)
     if not found:
         raise Invalid(f"{where}: the generated index links no 'docs/reference/<family>.md'")
-    return [(name, label) for label, name in found]
+    return [(name, label, about) for label, name, about in found]
 
 
 def demo_order(readme: str, names: list[str]) -> list[str]:
@@ -169,34 +340,44 @@ def demo_order(readme: str, names: list[str]) -> list[str]:
     return sorted(names, key=lambda n: (first(n), n))
 
 
-def collect(rs: list[Repo]) -> tuple[list[Page], dict[str, set[str]]]:
-    """Every page, and every repository's tracked files."""
+def collect(rs: list[Repo]) -> tuple[list[Page], list[Family], dict[str, set[str]]]:
+    """Every page made from a whole source, every family of the reference, and every
+    repository's tracked files."""
     pages: list[Page] = []
+    families: list[Family] = []
     files = {r.key: set(tracked(r)) for r in rs}
     for r in rs:
+        own = files[r.key]
         if r.key == "core":
             pages.append(Page(r, "README.md", "core/index.html", "core", read(r, "README.md"),
-                              label="Shared core"))
+                              label="The README"))
+            docs = sorted(f for f in own if re.fullmatch(rf"docs/{NAME}\.md", f))
+            pages += [Page(r, f, f"core/{f.removesuffix('.md')}.html", "core", read(r, f),
+                           order=i) for i, f in enumerate(docs, 1)]
             continue
-        own = files[r.key]
         readme = read(r, "README.md")
         reference = read(r, "REFERENCE.md")
         pages.append(Page(r, "README.md", f"{r.key}/index.html", "overview", readme,
-                          label="The server"))
+                          label="The README"))
         pages.append(Page(r, "REFERENCE.md", f"{r.key}/reference/index.html", "reference",
-                          reference, label="Reference index"))
-        families = roster(reference, f"{r.name}/REFERENCE.md")
-        for i, (fam, fam_label) in enumerate(families, 1):
+                          reference, label="All families"))
+        listed = roster(reference, f"{r.name}/REFERENCE.md")
+        for i, (fam, fam_label, about) in enumerate(listed, 1):
             src = f"docs/reference/{fam}.md"
             if fam == "index":
                 raise Invalid(f"{r.name}: a family named 'index' would replace the reference index")
             if src not in own:
                 raise Invalid(f"{r.name}: the index names {src}, which is not tracked")
-            pages.append(Page(r, src, f"{r.key}/reference/{fam}.html", "reference",
-                              read(r, src), label=fam_label, order=i))
-        listed = {f for f, _ in families}
-        unlisted = sorted(f for f in own if f.startswith("docs/reference/") and f.endswith(".md")
-                          and f.removeprefix("docs/reference/").removesuffix(".md") not in listed)
+            page = Page(r, src, f"{r.key}/reference/{fam}/index.html", "reference",
+                        read(r, src), label=fam_label, order=i)
+            pages.append(page)
+            tools = [m[1] for m in ENTRY.finditer(page.markdown)]
+            if not tools:
+                raise Invalid(f"{r.name}/{src}: no '<!-- scry-reference:begin <tool> -->' entry")
+            families.append(Family(page, about, tools))
+        names = {f for f, _, _ in listed}
+        unlisted = sorted(f for f in own if re.fullmatch(rf"docs/reference/{NAME}\.md", f)
+                          and f.removeprefix("docs/reference/").removesuffix(".md") not in names)
         if unlisted:
             raise Invalid(f"{r.name}: reference pages the generated index does not list: "
                           f"{unlisted}")
@@ -215,4 +396,4 @@ def collect(rs: list[Repo]) -> tuple[list[Page], dict[str, set[str]]]:
     for p in pages:
         p.title = title_of(p.markdown, f"{p.repo.name}/{p.src}")
         p.label = p.label or p.title.split(":")[0]
-    return pages, files
+    return pages, families, files

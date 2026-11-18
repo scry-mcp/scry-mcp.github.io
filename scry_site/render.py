@@ -14,12 +14,17 @@ from markdown_it.common.utils import normalizeReference
 from markdown_it.helpers import parseLinkDestination
 from mdit_py_plugins.anchors import anchors_plugin
 
+from scry_site import example
 from scry_site.sources import GITHUB, Invalid, Page, masked_inline
 
 _MD = MarkdownIt("gfm-like", {"linkify": False}).use(anchors_plugin, max_level=6)
+_MD.add_render_rule("fence", lambda self, tokens, idx, options, env: example.pane(
+    (tokens[idx].info.split() or [""])[0], tokens[idx].content))
+_MD.add_render_rule("code_block", lambda self, tokens, idx, options, env: example.pane(
+    "text", tokens[idx].content))
 # Raw HTML in markdown may quote an attribute either way; markdown-it's own output uses double.
-_LINK = re.compile(r"""\b(href|src)=(?:"([^"]*)"|'([^']*)')""")
-_HEADING = re.compile(r'<h([23]) id="([^"]+)"[^>]*>(.*?)</h\1>', re.S)
+_LINK = re.compile(r"""\b(href|src|srcset)=(?:"([^"]*)"|'([^']*)')""")
+_HEADING = re.compile(r'<h2 id="([^"]+)"[^>]*>(.*?)</h2>', re.S)
 _SCHEME = re.compile(r"[a-z][a-z0-9+.-]*:|//", re.I)
 # Marks a reference use among the links markdown-it reads; a real destination never holds NUL.
 _REF = "\0ref:"
@@ -31,13 +36,22 @@ class Links:
 
     pages: dict[tuple[str, str], str]
     tracked: dict[str, set[str]]
+    #: A heading of a source that a page of its own holds: `(repository, source, id)` to that
+    #: page and the id it has there (a tool's entry, read on the tool's page).
+    anchors: dict[tuple[str, str, str], str] = field(default_factory=dict)
     copies: dict[tuple[str, str], str] = field(default_factory=dict)
     broken: list[str] = field(default_factory=list)
 
 
 def markdown(md: str) -> str:
-    html_ = str(_MD.render(md))
-    return html_.replace("<pre>", '<pre tabindex="0">')
+    """`md` as HTML: a fenced block is a pane, a `<details>` folds like every other on the site."""
+    return re.sub(r"<details>(?=\s*<summary>)", '<details class="whole">', str(_MD.render(md)))
+
+
+def heading_ids(md: str) -> list[tuple[int, str]]:
+    """Each heading of `md` as `(its line, the id it renders with)`, in order."""
+    return [(t.map[0], str(t.attrGet("id"))) for t in _MD.parse(md)
+            if t.type == "heading_open" and t.map]
 
 
 #: Files a link points at that the site serves itself, so a browser plays them in place.
@@ -50,11 +64,12 @@ def resolve(url: str, page: Page, links: Links, *, virtual: bool = False, copy: 
             ext: str = ".html") -> str | None:
     """Where `url`, written in `page`, goes on the site, or None to leave it as written.
 
-    A link to a page the site renders goes to it (`ext` is how its pages are spelled), to any
-    other tracked file to GitHub, and a file `copy` asks for (a picture) or `MEDIA` is copied
-    beside the site. A relative link naming nothing the repository tracks is recorded in
-    `links.broken`. `virtual` marks a page made from part of its source: a link to one of the
-    source's own headings goes to the page made from the whole source.
+    A link to a page the site renders goes to it (`ext` is how its pages are spelled), and to a
+    heading another page holds (`links.anchors`, read only for HTML) to that page; to any other
+    tracked file to GitHub, and a file `copy` asks for (a picture) or `MEDIA` is copied beside the
+    site. A relative link naming nothing the repository tracks is recorded in `links.broken`.
+    `virtual` marks a page made from part of its source: a link to one of the source's own
+    headings is resolved as if it named the source.
     """
     key_ = page.repo.key
     own = links.tracked[key_]
@@ -62,7 +77,8 @@ def resolve(url: str, page: Page, links: Links, *, virtual: bool = False, copy: 
         return None
     path, _, frag = url.partition("#")
     path = unquote(path.partition("?")[0])
-    target = posixpath.normpath(posixpath.join(posixpath.dirname(page.src), path or page.src))
+    target = posixpath.normpath(posixpath.join(posixpath.dirname(page.src), path)) if path \
+        else page.src
     if url.startswith("/") or target.startswith("../") or target == "..":
         links.broken.append(f"{page.repo.name}/{page.src}: {url} (outside the repository)")
         return None
@@ -70,7 +86,11 @@ def resolve(url: str, page: Page, links: Links, *, virtual: bool = False, copy: 
     if (key_, target) not in links.pages and (key_, readme) in links.pages:
         target = readme
     tail = "#" + frag if frag else ""
-    if (key_, target) in links.pages:
+    moved = links.anchors.get((key_, target, unquote(frag))) if ext == ".html" else None
+    if moved:
+        dest, _, frag = moved.partition("#")
+        tail = "#" + frag if frag else ""
+    elif (key_, target) in links.pages:
         dest = links.pages[(key_, target)]
         if ext != ".html":
             dest = dest.removesuffix(".html") + ext
@@ -89,7 +109,7 @@ def rewrite(body: str, page: Page, links: Links, virtual: bool = False) -> str:
     """`page`'s HTML with every link resolved (see `resolve`)."""
     def fix(m: re.Match[str]) -> str:
         attr, url = m[1], html.unescape(m[2] if m[2] is not None else m[3])
-        new = resolve(url, page, links, virtual=virtual, copy=attr == "src")
+        new = resolve(url, page, links, virtual=virtual, copy=attr != "href")
         return m[0] if new is None else f'{attr}="{html.escape(new)}"'
 
     return _LINK.sub(fix, body)
@@ -185,10 +205,7 @@ def plain(md: str) -> str:
     return " ".join(html.unescape(re.sub(r"<[^>]+>", "", markdown(md))).split())
 
 
-def toc(body: str) -> str:
-    rows = [f'<li class="l{lvl}"><a href="#{i}">{re.sub(r"<[^>]+>", "", t)}</a></li>'
-            for lvl, i, t in _HEADING.findall(body)]
-    if not rows:
-        return ""
-    return (f'<nav class="toc" aria-label="On this page"><p>On this page</p>'
-            f'<ul>{"".join(rows)}</ul></nav>')
+def sections(body: str) -> list[tuple[str, str]]:
+    """The page's second-level headings, `(id, text)`: what the side list nests under it."""
+    return [(i, html.unescape(re.sub(r"<[^>]+>", "", t)).strip())
+            for i, t in _HEADING.findall(body)]

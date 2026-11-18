@@ -11,7 +11,7 @@ from urllib.parse import unquote
 
 from scry_site.sources import Invalid
 
-_REF = re.compile(r"""\b(?:href|src|poster)=(?:"([^"]*)"|'([^']*)')""")
+_REF = re.compile(r"""\b(?:href|src|srcset|poster)=(?:"([^"]*)"|'([^']*)')""")
 _ID = re.compile(r'\sid="([^"]+)"')
 _SCHEME = re.compile(r"[a-z][a-z0-9+.-]*:|//", re.I)
 

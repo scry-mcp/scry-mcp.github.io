@@ -36,6 +36,11 @@ select = ["E", "F", "I", "B", "UP", "N", "SIM", "W"]
 # the word the programs print), so the class that raises it is `Invalid`.
 ignore = ["N818"]
 
+[tool.ruff.lint.per-file-ignores]
+# The fixtures copy lines the servers' generators write (a lead's picture, an index entry) as
+# long as the generators write them: a line broken there is a source the build never meets.
+"tests/fixtures.py" = ["E501"]
+
 [tool.mypy]
 # No path list: a hand-kept list of directories is always one short of the tree.
 python_version = "3.11"
@@ -51,6 +56,9 @@ addopts = "--cov"
 [tool.coverage.run]
 branch = true
 source = ["scry_site", "tests"]
+# The browser the width cases drive: its working path runs in every suite, and its failure
+# branches answer a Chrome that does not start or a socket that breaks, which no case can cause.
+omit = ["tests/chrome.py"]
 
 [tool.coverage.report]
 # coverage.py's own floor, set to the total a full run measured and raised by hand from a run.

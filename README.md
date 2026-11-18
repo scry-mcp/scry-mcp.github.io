@@ -1,12 +1,17 @@
 # scry-mcp.github.io
 
-The SCRY site, built from the SCRY repositories' own markdown: each server's front door, its
-getting started, its reference and its demos, and scry-core's README. This repository holds the
-layout, the landing page's own wording (its opening, headings and link labels), the navigation,
-and the build. A page's title and its description (its first paragraph) come from its source,
-except the landing's and each getting-started page's, which the build writes. Every other word the site shows about a
-server is read out of that server's repository at build time, so a rebuilt site says what the
-repositories say.
+This repository builds the SCRY site from the SCRY repositories' own documents. The site has a
+home, one page per tool of each server, one page per demo with its clip moving, and every other
+public document. Every word about a server is read out of that server's repository at build
+time, so a rebuilt site says what the repositories say.
+
+The site's own words are few:
+
+- `scry_site/templates/landing.html`: the home's hero, section headings and leads.
+- `scry_site/home.py`: the hero's two moments, the labels of the request under the picture,
+  and the install steps' titles.
+- `scry_site/build.py`: the page titles, the home's description and the reference page's lead.
+- `scry_site/templates/page.html`: the navigation and the foot.
 
 ## Build it
 
@@ -21,50 +26,70 @@ uv run scry-site ../ --out _site
 python3 -m http.server --directory _site 8000
 ```
 
-The first line prints one line of JSON (the pages written, the files copied, the links inside
-the site it followed); the second serves the site at `http://localhost:8000`.
+The first line prints one line of JSON: the pages written, the files copied, and the links
+inside the site it followed. The second serves the site at `http://localhost:8000`.
 
 ## What a build refuses
 
 A build renders into a directory beside `--out` and puts it in place only once every check
 passes. Otherwise it leaves `--out` as it was, prints `INVALID:` with the reason, and exits 3.
-It stops at the first of these in the sources:
 
-- a checkout that is missing or that git cannot list, or a file it cannot read;
-- in a server's `README.md`: no bold opening sentence, no `## Two minutes to a first answer`
-  opening with a sentence and holding a `sh` block, no `## Platforms` opening with the hosts it
-  runs on, or, in scry-dosbox-x's, no `<!-- demo-flow:begin bricks -->` block with the calls the
-  landing shows;
-- in a server's `REFERENCE.md`: no generated index, an index entry naming a page that is not
-  tracked or named `index`, or a page under `docs/reference/` the index does not list;
-- a demo directory named outside lowercase letters, digits, `_` and `-`, or one without its
-  `screen.png` or its `loop.mp4`, or a demo page whose README does not show that still alone in
-  one paragraph exactly once, which is where its loop plays;
-- a page without a `# ` title, or scry-core's `## Credits` not being the one credits line;
-- `--out` naming a file, the directory that holds the checkouts, or a place inside one.
+It stops at the first source that is not in the shape the site reads. In a server's `README.md`:
 
-And it lists every one of these:
+- no `<h1>`, or no bold opening sentence;
+- an `## Install` that does not open with a sentence and a `sh` block;
+- no install block (`<!-- scry-install:begin -->`), a client in it without its sentence and
+  one fenced block, or two READMEs listing different clients;
+- a `### Your first question` without exactly one quoted prompt;
+- a `## What you can ask` item that is not a bold question, its tools and a sentence, or that
+  names a tool with no entry in the reference;
+- a `## See it run` that does not list each demo;
+- in scry-dosbox-x's, no `demo-lead` block with its picture and the rows "You ask", "Your
+  client calls" and "SCRY answers".
+
+In the reference:
+
+- `REFERENCE.md` without its generated index, an index entry naming a page that is not tracked
+  or is named `index`, or a page in `docs/reference/` the index does not list;
+- a tool's entry that does not open with its name, one sentence and its signature;
+- an entry whose sections are not Try it, an optional table of modes, Arguments, What comes
+  back, What it refuses, Why it works this way and Related tools, in that order;
+- one tool with two entries.
+
+In a demo's `README.md`:
+
+- no motion block, or one whose moments disagree with their times or with the frames of
+  `loop.webp`;
+- a `loop.webp` that is not an animated WebP, or a `loop.webp` or `screen.png` not tracked;
+- no single transcript block of numbered steps;
+- a demo folder named outside lowercase letters, digits, `_` and `-`.
+
+An example, on a tool's page or a demo's, must be the request, its quote, one or two calls each
+with its reply, a sentence reading the reply, and the whole reply folded. A build also stops
+on a page without a title, on scry-core's `## Credits` not being the one credits line, and on
+an `--out` that names a file, the directory of the checkouts, or a place inside one.
+
+It lists every one of these:
 
 - a link in any source to a path its repository does not track, named by file and link;
-- a link inside the built site to a page it does not hold or a heading that page does not carry,
-  named by the built page (whose source is the same path in the repository it belongs to).
+- a link inside the built site to a page it does not hold, or to a heading that page does not
+  carry, named by the built page.
 
 ## What the pages are made of
 
-- `scry_site/sources.py` reads the sources: which tracked markdown becomes which page, the
-  reference families in the order the server's generated index lists them, the demos in the
-  order its front door links them, and what the landing lifts from each front door.
-- `scry_site/render.py` renders them (markdown-it-py, headings anchored the way GitHub anchors
-  them) and points every relative link at its page here, at a copy of the picture, or at the file
-  on GitHub.
+- `scry_site/sources.py` reads the sources and each part of a README the home takes.
+- `scry_site/reference.py` cuts each family's page into one page per tool and the family's own
+  page. A link to a tool's heading goes to that tool's page.
+- `scry_site/example.py` draws every example in one shape and every code block in a framed box.
+- `scry_site/motion.py` reads a demo's `loop.webp`: its size, which sets the screen frame it
+  plays in, and its frame times, which light each moment while it plays.
+- `scry_site/home.py` and `scry_site/demos.py` fill the home and each demo's page.
+- `scry_site/render.py` renders markdown with GitHub's heading anchors, and points each
+  relative link at its page here, at a copy of the file, or at the file on GitHub.
 - `scry_site/check.py` follows every link inside the built site.
-- `scry_site/build.py` puts it together: the getting-started pages, the landing (one entry per
-  demo, linking each server that runs it, with its loop playing over its still; install lines
-  folded after `--`; the console wrapping a long line instead of scrolling it), each demo page
-  playing its loop in the still's place, the page list (a "Pages" line under the header on a
-  phone), a markdown twin of every page but the getting-started ones, with its links pointed at
-  the other twins, `llms.txt` listing them, and the swap into `--out`.
-- `scry_site/templates/` and `scry_site/static/` are the layout and the look; the fonts are
+- `scry_site/build.py` puts it together. It also writes a markdown copy of every page made from
+  a whole document, and `llms.txt`, which lists those copies.
+- `scry_site/templates/` and `scry_site/static/` are the layout and the look. The fonts are
   served with the site under the SIL Open Font License (`scry_site/static/fonts/`).
 
 ## Checks
@@ -75,7 +100,17 @@ uv run mypy --strict .
 uv run pytest -q
 ```
 
-The tests build sites from small git repositories they create, so they need no checkout.
+Most tests build sites from small git repositories they create. `tests/test_real.py` builds
+the site from the real checkouts and checks it against the design rules:
+
+- every text's contrast, computed from `site.css`;
+- the number of words on the home above its install block;
+- in a headless Chrome, at 390 and 1440 px: no page scrolls sideways, no code block is wider
+  than its box, and no text is under 13 px.
+
+It finds the checkouts in `SCRY_SITE_CHECKOUTS`, else in `repos/`, else in the directory this
+repository sits in. It finds Chrome in `SCRY_SITE_CHROME`, else on the `PATH`, else where macOS
+installs it. Without either, it fails.
 
 ## Publishing
 
