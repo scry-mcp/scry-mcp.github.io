@@ -42,9 +42,8 @@
   </div>
 </footer>
 <script>
-/* Copy buttons where the clipboard exists, the moments under a picture lit in time with it, and
-   on a command page the side list fitted above the foot, following the section being read.
-   The page reads whole without this script. */
+/* Copy buttons, a picture's moments lit in time with it, the side list fitted between the bar
+   and the foot and, on a command page, following the section being read. Not needed to read. */
 if (navigator.clipboard) for (const e of document.querySelectorAll("[data-copy]")) {
   const pre = e.matches("pre"), b = document.createElement("button");
   b.className = "copy"; b.type = "button"; b.textContent = "Copy";
@@ -61,10 +60,10 @@ if (timed && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
     img.src = img.src; };
   go(); document.addEventListener("visibilitychange", () => document.hidden || go());
 }
-const back = document.querySelector(".tolist");
-if (back) {
-  const fold = document.querySelector(".side-m"), sd = document.querySelector(".side-d"),
-    open = sd.querySelector("[aria-current]"), hs = [...document.querySelectorAll(".doc>h2[id]")],
+const sd = document.querySelector(".side-d"), back = document.querySelector(".tolist");
+if (sd) {
+  const fold = document.querySelector(".side-m"),
+    open = sd.querySelector("[aria-current]"), hs = back ? [...document.querySelectorAll(".doc>h2[id]")] : [],
     y = e => e.getBoundingClientRect().top - sd.getBoundingClientRect().top + sd.scrollTop;
   let was;
   const follow = () => {
@@ -82,7 +81,7 @@ if (back) {
     }
     was = now;
   };
-  back.onclick = () => { fold.open = true; };
+  if (back) back.onclick = () => { fold.open = true; };
   follow(); addEventListener("scroll", follow, {passive: true}); addEventListener("resize", follow);
 }
 </script>

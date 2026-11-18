@@ -108,6 +108,8 @@ the site from the real checkouts and checks it against the design rules:
 - at the end of a command page, the tool list in reach: on a wide screen the open command, the
   section being read and the next command show in it; on a phone the corner link shows, takes
   the reader to the list opened, and hides no focused control;
+- at the end of a family or document page in a short window, the wide side list sits between
+  the bar and the foot;
 - on a phone, every link of a page's crumbs is 44 px high;
 - a focused link in the wide tool list shows its whole focus ring.
 

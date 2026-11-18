@@ -157,6 +157,27 @@ def test_the_end_of_a_command_page_reaches_its_side_list(
     assert found == {page: [True] * 4 for page in found}
 
 
+#: At the end of a page, in a short window: the wide side list starts under the bar and ends at
+#: least 24 px above the foot.
+FITS = """(async () => {
+  scrollTo(0, document.documentElement.scrollHeight);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const side = document.querySelector('.side').getBoundingClientRect();
+  return [side.top >= document.querySelector('.menubar').getBoundingClientRect().bottom - 1,
+          side.bottom <= document.querySelector('.foot').getBoundingClientRect().top - 23];
+})()"""
+
+
+def test_the_end_of_a_family_or_document_page_fits_its_side_list_under_the_bar(
+        real_site: Path, chrome: Chrome) -> None:
+    found = {}
+    for page in ("dosbox-x/reference/breakpoints/index.html", "core/docs/katas.html",
+                 "mame/contributing.html", "dosbox-x/reference/session/start.html"):
+        chrome.load((real_site / page).as_uri(), 1440, 700)
+        found[page] = chrome.answer(FITS)
+    assert found == {page: [True, True] for page in found}
+
+
 def test_a_command_page_seen_whole_from_its_top_marks_no_section_as_read(
         real_site: Path, chrome: Chrome) -> None:
     chrome.load((real_site / "mame/reference/session/close.html").as_uri(), 1440, 4000)
