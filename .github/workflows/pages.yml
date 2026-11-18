@@ -19,6 +19,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # configure-pages reads the repository's Pages settings, which contents: read does not reach.
+    permissions:
+      contents: read
+      pages: write
     steps:
       - uses: actions/checkout@v7
       # The workflow's own token reaches only public repositories, which these have to be.
