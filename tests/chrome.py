@@ -108,18 +108,21 @@ class Chrome:
     def __init__(self, path: str) -> None:
         self.profile = tempfile.mkdtemp(prefix="scry-site-chrome-")
         port_file = Path(self.profile) / "DevToolsActivePort"
+        self.log = Path(self.profile) / "stderr.log"
+        self.err = self.log.open("wb")
         self.process = subprocess.Popen(
             [path, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
              "--no-default-browser-check", f"--user-data-dir={self.profile}",
              "--remote-debugging-port=0", "about:blank"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stdout=subprocess.DEVNULL, stderr=self.err)
         try:
             for _ in range(200):
                 if port_file.exists() and port_file.read_text().strip():
                     break
                 time.sleep(0.05)
             else:
-                raise Broken("Chrome wrote no DevToolsActivePort")
+                said = self.log.read_text(errors="replace").strip()[-600:]
+                raise Broken(f"Chrome wrote no DevToolsActivePort; it said: {said or 'nothing'}")
             port = port_file.read_text().split("\n")[0]
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=30) as r:
                 pages = json.load(r)
@@ -145,6 +148,7 @@ class Chrome:
             self.process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             self.process.kill()
+        self.err.close()
         shutil.rmtree(self.profile, ignore_errors=True)
 
     def load(self, url: str, width: int, height: int) -> None:
