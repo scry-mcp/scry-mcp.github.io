@@ -116,7 +116,9 @@ class Chrome:
              "--remote-debugging-port=0", "about:blank"],
             stdout=subprocess.DEVNULL, stderr=self.err)
         try:
-            for _ in range(200):
+            # A cold Chrome on a CI runner takes longer than 10 s to open its port.
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
                 if port_file.exists() and port_file.read_text().strip():
                     break
                 time.sleep(0.05)
@@ -124,8 +126,8 @@ class Chrome:
                 said = [line for line in self.log.read_text(errors="replace").splitlines()
                         if "dbus" not in line]
                 tail = " | ".join(said)[-1500:] or "nothing"
-                raise Broken(f"Chrome wrote no DevToolsActivePort (exit {self.process.poll()}); "
-                             f"it said, D-Bus lines left out: {tail}")
+                raise Broken("Chrome wrote no DevToolsActivePort in 60 s "
+                             f"(exit {self.process.poll()}); it said, D-Bus lines left out: {tail}")
             port = port_file.read_text().split("\n")[0]
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=30) as r:
                 pages = json.load(r)
