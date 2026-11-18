@@ -20,7 +20,7 @@ from importlib import resources
 from pathlib import Path
 
 from scry_site import demos, example, home, motion, reference, render, sources
-from scry_site.check import check
+from scry_site.check import NOT_FOUND, check
 from scry_site.sources import GROUPS, Family, Invalid, Page, Repo, collect, read, repos
 
 TAGLINE = "MCP servers that hold MAME or DOSBox-X open so your AI client can debug the program " \
@@ -144,7 +144,8 @@ def tool_side(f: Family, ts: list[reference.Tool], current: str, out: str,
 
 def shell(*, title: str, description: str, out: str, body: str, credits: str, head: str = "",
           nav: str = "") -> str:
-    root = rel(".", out) if posixpath.dirname(out) else "."
+    # The not-found page is served at whatever address was asked, so it links from the root.
+    root = "" if out == NOT_FOUND else rel(".", out) if posixpath.dirname(out) else "."
     on = {k: " aria-current=page" if nav == k else "" for k in ("demos", "reference")}
     return template("page.html", title=html.escape(title), description=html.escape(description),
                     root=root, head=f"<style>\n{head}\n</style>" if head else "", body=body,
@@ -329,6 +330,14 @@ class Site:
         self.put(out, "Reference · SCRY", "Every tool of the two SCRY servers, by family.",
                  solo(body), nav="reference")
 
+    def not_found(self) -> None:
+        body = ("<h1>Page not found</h1><p class=lead>Nothing on this site lives at this "
+                'address. Start from the <a href="/index.html">home</a>, the '
+                '<a href="/index.html#demos">demos</a> or the '
+                '<a href="/reference/index.html">reference</a>.</p>')
+        self.put(NOT_FOUND, "Page not found · SCRY", "No page of the SCRY site lives at this "
+                 "address.", solo(body))
+
     def home(self, ds: list[home.Demo]) -> None:
         servers = []
         for r in self.rs:
@@ -377,6 +386,7 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
     site.render_pages(ds)
     site.reference_index()
     site.home(ds)
+    site.not_found()
     twins = {twin_path(p): render.twin(p, site.links) for p in site.pages}
     if site.links.broken:
         raise Invalid("links in the sources to paths no repository tracks:\n  "

@@ -14,6 +14,8 @@ from scry_site.sources import Invalid
 _REF = re.compile(r"""\b(?:href|src|srcset|poster)=(?:"([^"]*)"|'([^']*)')""")
 _ID = re.compile(r'\sid="([^"]+)"')
 _SCHEME = re.compile(r"[a-z][a-z0-9+.-]*:|//", re.I)
+# Served for every address that holds no page, so its links start at the site's root.
+NOT_FOUND = "404.html"
 
 
 def check(site: Path) -> int:
@@ -28,7 +30,7 @@ def check(site: Path) -> int:
         raise Invalid(f"no page under {site}")
     ids = {rel: set(_ID.findall(text)) for rel, text in pages.items()}
     # Compared by exact spelling: `is_file` on a case-insensitive disk finds `Guide.html` as
-    # `guide.html`, and Pages, on a case-sensitive one, does not.
+    # `guide.html`, and S3, on a case-sensitive one, does not.
     held = {p.relative_to(site).as_posix() for p in site.rglob("*") if p.is_file()}
     misses = [f"{rel}: the id '{i}' is held twice" for rel, text in sorted(pages.items())
               for i, n in Counter(_ID.findall(text)).items() if n > 1]
@@ -40,9 +42,16 @@ def check(site: Path) -> int:
                 continue
             checked += 1
             path, _, frag = url.partition("#")
-            target = posixpath.normpath(posixpath.join(posixpath.dirname(rel), unquote(path))) \
-                if path else rel
-            if url.startswith("/") or target == ".." or target.startswith("../"):
+            if rel == NOT_FOUND and path.startswith("/"):
+                # The address `/` is the home, which CloudFront serves as its root object.
+                path, base = path[1:] or "index.html", ""
+            elif path.startswith("/"):
+                misses.append(f"{rel}: {url} (outside the site)")
+                continue
+            else:
+                base = posixpath.dirname(rel)
+            target = posixpath.normpath(posixpath.join(base, unquote(path))) if path else rel
+            if target == ".." or target.startswith("../"):
                 misses.append(f"{rel}: {url} (outside the site)")
             elif target not in held:
                 misses.append(f"{rel}: {url} (no file)")

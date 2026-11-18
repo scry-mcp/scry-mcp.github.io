@@ -39,9 +39,9 @@ def replace(f: Path, old: str, new: str) -> None:
 def test_builds_every_page_and_lands_every_link(repos: Path, tmp_path: Path) -> None:
     report = build.build(repos, tmp_path / "site")
     site = tmp_path / "site"
-    assert report["pages"] == 22
+    assert report["pages"] == 23
     assert report["links"] > 0
-    for page in ("index.html", "reference/index.html", "mame/index.html",
+    for page in ("index.html", "404.html", "reference/index.html", "mame/index.html",
                  "mame/reference/index.html", "mame/reference/breakpoints/index.html",
                  "mame/reference/breakpoints/watch_add.html", "mame/reference/session/start.html",
                  "mame/demos/gridlee/index.html", "mame/contributing.html", "core/index.html",
@@ -58,7 +58,7 @@ def test_builds_every_page_and_lands_every_link(repos: Path, tmp_path: Path) -> 
 def test_main_reports_and_exits(repos: Path, tmp_path: Path,
                                 capsys: pytest.CaptureFixture[str]) -> None:
     assert build.main([str(repos), "--out", str(tmp_path / "site")]) == 0
-    assert json.loads(capsys.readouterr().out)["pages"] == 22
+    assert json.loads(capsys.readouterr().out)["pages"] == 23
     assert build.main([str(tmp_path / "none"), "--out", str(tmp_path / "x")]) == 3
     assert capsys.readouterr().err.startswith("INVALID: no scry-mame checkout")
 
@@ -929,6 +929,28 @@ def test_check_refuses_a_link_out_of_the_site(tmp_path: Path) -> None:
         check(tmp_path)
     assert "a.html: ../outside.html (outside the site)" in str(e.value)
     assert "a.html: /etc/hosts (outside the site)" in str(e.value)
+
+
+def test_the_not_found_page_links_from_the_site_root_so_it_works_at_any_address(
+        repos: Path, tmp_path: Path) -> None:
+    page = built(repos, tmp_path, "404.html")
+    assert "<h1>Page not found</h1>" in page
+    assert 'href="/site.css"' in page and 'href="/index.html#install"' in page
+    assert 'href="#top"' in page and 'href="#content"' in page
+    assert not re.search(r"""(?:href|src)="(?!/|#|https://)""", page)
+
+
+def test_check_follows_the_not_found_page_s_links_from_the_site_root(tmp_path: Path) -> None:
+    (tmp_path / "404.html").write_text('<a href="/a.html#here">ok</a><a href="/gone.html">x</a>'
+                                       '<a href="/../up.html">y</a><a href="/#nope">w</a>')
+    (tmp_path / "a.html").write_text('<p id="here"></p><a href="/404.html">z</a>')
+    with pytest.raises(Invalid) as e:
+        check(tmp_path)
+    assert "404.html: /gone.html (no file)" in str(e.value)
+    assert "404.html: /../up.html (outside the site)" in str(e.value)
+    assert "404.html: /#nope (no file)" in str(e.value)
+    assert "a.html: /404.html (outside the site)" in str(e.value)
+    assert "/a.html#here" not in str(e.value)
 
 
 def test_check_refuses_an_id_a_page_holds_twice(tmp_path: Path) -> None:
