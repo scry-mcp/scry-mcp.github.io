@@ -29,6 +29,8 @@ build-backend = "hatchling.build"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# The publishing workflow clones the three repositories into `repos/`: their code is theirs.
+extend-exclude = ["repos"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "SIM", "W"]
@@ -47,6 +49,7 @@ python_version = "3.11"
 strict = true
 warn_unreachable = true
 warn_return_any = true
+exclude = ["^repos/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

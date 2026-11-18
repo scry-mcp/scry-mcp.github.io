@@ -11,3 +11,5 @@ __pycache__/
 **/.DS_Store
 # The built site: generated, never tracked.
 _site/
+# The three repositories the publishing workflow clones to build from.
+repos/
