@@ -135,7 +135,6 @@ def _emulators(servers: list[Server]) -> str:
             '<li><a href="#install">Install</a></li>'
             f'<li><a href="{s.reference}">Reference</a></li>'
             f'<li><a href="{s.first_demo}">Demos</a></li>'
-            f'<li><a href="{s.repo.key}/index.html">The README</a></li>'
             f'<li><a href="https://github.com/scry-mcp/{s.repo.name}">GitHub</a></li>'
             f"</ul>{prompt}</div>")
     return f'<div class="machines">{"".join(boxes)}</div>'

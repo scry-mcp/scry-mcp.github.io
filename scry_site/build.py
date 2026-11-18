@@ -392,6 +392,9 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
         raise Invalid("links in the sources to paths no repository tracks:\n  "
                       + "\n  ".join(sorted(site.links.broken)))
     for path, text in {**site.rendered, **twins, "llms.txt": llms_txt(rs, site.pages)}.items():
+        if "linkedin" in text.lower():
+            raise Invalid(f"{path}: a mention of LinkedIn; the site links the author's GitHub "
+                          "only, through the credits line")
         dest = into / path
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text, encoding="utf-8")

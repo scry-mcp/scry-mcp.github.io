@@ -77,11 +77,20 @@ def tracked(repo: Repo) -> list[str]:
     return [path for stage, path in rows if not stage.startswith("120000 ")]
 
 
+_CREDITS = "Developed by Optimiza ([Marcos Hernández]({}))"
+CREDITS_LINKEDIN = _CREDITS.format("https://www.linkedin.com/in/optimiza/")
+CREDITS_GITHUB = _CREDITS.format("https://github.com/Optimiza")
+
+
 def read(repo: Repo, src: str) -> str:
+    """A source's text, as every page, twin and `llms.txt` line of the site is made from it.
+    The credits line's link to the author is read as their GitHub; the build refuses any other
+    mention of LinkedIn in what it writes."""
     try:
-        return (repo.root / src).read_text(encoding="utf-8")
+        text = (repo.root / src).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as e:
         raise Invalid(f"cannot read {repo.name}/{src}: {e}") from e
+    return text.replace(CREDITS_LINKEDIN, CREDITS_GITHUB)
 
 
 _BLOCKS = MarkdownIt("commonmark")
@@ -351,16 +360,14 @@ def collect(rs: list[Repo]) -> tuple[list[Page], list[Family], dict[str, set[str
     for r in rs:
         own = files[r.key]
         if r.key == "core":
-            pages.append(Page(r, "README.md", "core/index.html", "core", read(r, "README.md"),
-                              label="The README"))
+            pages.append(Page(r, "README.md", "core/index.html", "core", read(r, "README.md")))
             docs = sorted(f for f in own if re.fullmatch(rf"docs/{NAME}\.md", f))
             pages += [Page(r, f, f"core/{f.removesuffix('.md')}.html", "core", read(r, f),
                            order=i) for i, f in enumerate(docs, 1)]
             continue
         readme = read(r, "README.md")
         reference = read(r, "REFERENCE.md")
-        pages.append(Page(r, "README.md", f"{r.key}/index.html", "overview", readme,
-                          label="The README"))
+        pages.append(Page(r, "README.md", f"{r.key}/index.html", "overview", readme))
         pages.append(Page(r, "REFERENCE.md", f"{r.key}/reference/index.html", "reference",
                           reference, label="All families"))
         listed = roster(reference, f"{r.name}/REFERENCE.md")

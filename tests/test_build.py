@@ -63,6 +63,50 @@ def test_main_reports_and_exits(repos: Path, tmp_path: Path,
     assert capsys.readouterr().err.startswith("INVALID: no scry-mame checkout")
 
 
+# ---- the credits line ------------------------------------------------------------------------
+
+REAL_CREDITS = (
+    "Developed by Optimiza ([Marcos Hernández](https://www.linkedin.com/in/optimiza/)), in "
+    "collaboration with [MS-DOS Club](https://msdos.club) and its "
+    "[podcast](https://www.ivoox.com/podcast-ms-dos-club_sq_f11160693_1.html).")
+
+
+def with_real_credits(repos: Path) -> None:
+    for name in ("scry-mame", "scry-dosbox-x", "scry-core"):
+        replace(repos / name / "README.md", CREDITS, REAL_CREDITS)
+
+
+def test_the_site_links_the_authors_github_wherever_a_readme_links_linkedin(
+        repos: Path, tmp_path: Path) -> None:
+    with_real_credits(repos)
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    for page in ("index.html", "mame/index.html", "dosbox-x/index.html", "core/index.html",
+                 "core/docs/file-names.html", "mame/index.md", "core/index.md", "llms.txt"):
+        text = (site / page).read_text()
+        assert "linkedin" not in text.lower(), page
+    for page in ("index.html", "mame/index.html", "core/index.html", "mame/index.md"):
+        assert "https://github.com/Optimiza" in (site / page).read_text(), page
+    # the sources keep their own line
+    assert "https://www.linkedin.com/in/optimiza/" in (repos / "scry-core/README.md").read_text()
+
+
+@pytest.mark.parametrize("source", [
+    "scry-mame/README.md", "scry-mame/CONTRIBUTING.md", "scry-mame/demos/gridlee/README.md",
+    "scry-mame/docs/reference/session.md", "scry-core/docs/file-names.md"])
+@pytest.mark.parametrize("link", [
+    "[x](https://www.linkedin.com/in/someone-else/)",
+    "[x](https://www.linkedin&#46;com/in/someone-else/)",
+    "[me](https://www.linkedin.com/in/optimiza/)"])
+def test_a_linkedin_link_outside_the_credits_line_is_invalid(
+        repos: Path, tmp_path: Path, source: str, link: str) -> None:
+    with_real_credits(repos)
+    f = repos / source
+    f.write_text(f.read_text() + f"\n{link}\n")
+    with pytest.raises(Invalid, match="a mention of LinkedIn"):
+        build.build(repos, tmp_path / "site")
+
+
 # ---- the home ------------------------------------------------------------------------------
 
 
@@ -711,9 +755,24 @@ def test_the_page_doc_side_lists_the_repositorys_pages_with_the_open_ones_sectio
         repos: Path, tmp_path: Path) -> None:
     page = built(repos, tmp_path, "mame/index.html")
     side = side_of(page)
-    assert '<a aria-current=page href="index.html">The README</a><ul class=sub>' in side
+    assert '<a aria-current=page href="index.html">scry-mame</a><ul class=sub>' in side
     assert '<a href="#install">Install</a>' in side
     assert side.index(">Overview<") < side.index(">Demos<") < side.index(">Reference<")
+
+
+def test_no_page_says_the_readme_as_a_link_or_an_entry(repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    for page in sorted(site.rglob("*.html")):
+        assert ">The README</a>" not in page.read_text(), page
+    home = (site / "index.html").read_text()
+    menus = re.findall(r'<ul class="menu">(.*?)</ul>', home, re.S)
+    assert len(menus) == 2
+    for menu in menus:
+        assert re.findall(r"<li><a [^>]*>([^<]+)</a></li>", menu) == [
+            "Install", "Reference", "Demos", "GitHub"]
+    core = (site / "core/docs/file-names.html").read_text()
+    assert '<a href="../index.html">scry-core</a>' in side_of(core)
 
 
 def test_a_page_describes_itself_by_its_first_paragraph(repos: Path, tmp_path: Path) -> None:

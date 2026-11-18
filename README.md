@@ -62,7 +62,8 @@ An example is on a tool's page or a demo's. It must be the request, its quote, o
 each with its reply, a sentence reading the reply, and the whole reply folded.
 
 A build also stops on a page without a title, and on scry-core's `## Credits` not being the one
-credits line. It refuses an `--out` that names a file, the checkouts' directory or a place in
+credits line. The READMEs link the author's LinkedIn there; the site links their GitHub instead,
+and a build refuses any other link to LinkedIn in a source. It refuses an `--out` that names a file, the checkouts' directory or a place in
 one, or a directory holding files no build made.
 
 It lists every one of these:
