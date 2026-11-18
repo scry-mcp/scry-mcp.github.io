@@ -306,7 +306,7 @@ figure.shot figcaption{margin-top:var(--s3);font-size:.9375rem;color:var(--muted
 .side-d>p:first-child{margin:0;padding:var(--s3) var(--s4) var(--s1);font:600 .8125rem/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--fg)}
 .side .about{margin:0;padding:0 var(--s4) var(--s3);color:var(--muted);font-size:.875rem;line-height:1.45}
 @media (min-width:960px){
-  .side{position:sticky;top:72px;align-self:start}.side-m{display:none}
+  .side{position:sticky;top:72px;align-self:start;margin-bottom:var(--s5)}.side-m{display:none}
   .side-d{display:block;max-height:calc(100vh - 88px);overflow-y:auto;scrollbar-width:thin}
   .side-d a:focus-visible{outline-offset:-2px}
   .side li a{min-height:36px}.side ul.sub a{min-height:0}}
