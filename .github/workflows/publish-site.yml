@@ -1,9 +1,10 @@
-# Publishes the site to scryai.net: build a release, or select one already published, and serve it.
+# Publishes the site to scryai.net: build a new release, or select one already published, and
+# serve it.
 #
-# Every publish writes releases/<commit>/ first and the served root is synchronised from that
-# release, so a rollback is the same run with the earlier commit in `release`: nothing is rebuilt.
-# The release is named by this repository's commit; the commits of the three repositories it was
-# built from are in the run's summary.
+# A release is releases/<name>/, named <UTC date>-<UTC time>-<site commit> when it is built, and
+# never written again: its manifest, release.json, is written last and records the name, the
+# build time and the four commits it was built from. The served root is synchronised from a
+# release, so a rollback is this run with an earlier name in `release`: nothing is rebuilt.
 name: Publish site
 
 on:
@@ -14,7 +15,7 @@ on:
         required: true
         type: string
       release:
-        description: Release to publish (a commit already under releases/); empty builds the dispatched ref
+        description: Release to serve again, by name (20261118-153012-f10abef); empty builds a new one
         required: false
         default: ""
         type: string
@@ -37,12 +38,19 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    outputs:
+      release: ${{ steps.name.outputs.release }}
+      built_at: ${{ steps.name.outputs.built_at }}
+      scry-core: ${{ steps.clone.outputs.scry-core }}
+      scry-mame: ${{ steps.clone.outputs.scry-mame }}
+      scry-dosbox-x: ${{ steps.clone.outputs.scry-dosbox-x }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # Cloned anonymously, so a repository that is not public fails here instead of building.
       - name: Clone the three repositories the site is built from
+        id: clone
         timeout-minutes: 3
         env:
           GIT_TERMINAL_PROMPT: "0"
@@ -50,8 +58,15 @@ jobs:
           for repo in scry-core scry-mame scry-dosbox-x; do
             git clone --quiet --depth 1 --branch main \
               "https://github.com/scry-mcp/$repo.git" "repos/$repo"
-            echo "- $repo \`$(git -C "repos/$repo" rev-parse HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "$repo=$(git -C "repos/$repo" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           done
+      # One clock reading gives both the name and the time, so they cannot straddle a second.
+      - name: Name the release
+        id: name
+        run: |
+          stamp="$(date -u +%Y%m%d-%H%M%S)"
+          echo "release=$stamp-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "built_at=${stamp:0:4}-${stamp:4:2}-${stamp:6:2}T${stamp:9:2}:${stamp:11:2}:${stamp:13:2}Z" >> "$GITHUB_OUTPUT"
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         timeout-minutes: 3
       - name: Install
@@ -85,6 +100,8 @@ jobs:
     env:
       BUCKET: ${{ vars.SITE_BUCKET }}
       DISTRIBUTION: ${{ vars.SITE_DISTRIBUTION_ID }}
+      RELEASE: ${{ inputs.release || needs.build.outputs.release }}
+      ROLLBACK: ${{ inputs.release }}
     steps:
       # The environment's branch policy refuses this too; the step puts the reason in the run's log.
       - name: Refuse a production publish outside main
@@ -107,6 +124,13 @@ jobs:
             echo "the environment lacks:$missing"
             exit 1
           fi
+      # The name becomes a path in the bucket: only the form a build makes gets that far.
+      - name: Check the release name
+        run: |
+          if ! [[ "$RELEASE" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{7}$ ]]; then
+            echo "'$RELEASE' is not a release name; a release is named like 20261118-153012-f10abef"
+            exit 1
+          fi
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: inputs.release == ''
         with:
@@ -119,23 +143,55 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
       - name: Upload the release
         if: inputs.release == ''
+        env:
+          BUILT_AT: ${{ needs.build.outputs.built_at }}
+          SCRY_CORE: ${{ needs.build.outputs.scry-core }}
+          SCRY_MAME: ${{ needs.build.outputs.scry-mame }}
+          SCRY_DOSBOX_X: ${{ needs.build.outputs.scry-dosbox-x }}
         run: |
-          aws s3 sync _site/ "s3://$BUCKET/releases/$GITHUB_SHA/" --delete
-          # A manifest written last tells a complete release from an interrupted upload.
+          # A step with no `shell:` runs without pipefail: a failed listing or jq would not stop it.
           set -o pipefail
-          objects="$(aws s3 ls --recursive "s3://$BUCKET/releases/$GITHUB_SHA/" | wc -l | tr -d ' ')"
+          prefix="s3://$BUCKET/releases/$RELEASE/"
+          # A release is never written twice, a re-run of this job included.
+          if ! held="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "releases/$RELEASE/" \
+            --max-items 1 --query "length(Contents || \`[]\`)" --output text)"; then
+            echo "releases/$RELEASE/ could not be listed; nothing is written"
+            exit 1
+          fi
+          if [ "$held" != "0" ]; then
+            echo "releases/$RELEASE/ already holds objects; a release is never written again"
+            exit 1
+          fi
+          aws s3 cp --recursive --quiet _site/ "$prefix"
+          # A manifest written last tells a complete release from an interrupted upload.
+          objects="$(aws s3 ls --recursive "$prefix" | wc -l | tr -d ' ')"
           if [ "$objects" -le 0 ]; then
             echo "the release listing is empty or failed; no manifest is written"
             exit 1
           fi
-          echo "$objects" | aws s3 cp - "s3://$BUCKET/releases/$GITHUB_SHA/objects.txt"
+          jq -n --arg release "$RELEASE" --arg built_at "$BUILT_AT" --argjson objects "$objects" \
+            --arg site "$GITHUB_SHA" --arg core "$SCRY_CORE" --arg mame "$SCRY_MAME" \
+            --arg dosbox_x "$SCRY_DOSBOX_X" \
+            '{release: $release, built_at: $built_at, objects: $objects, commits: [
+              {repository: "scry-mcp/scry-site", sha: $site},
+              {repository: "scry-mcp/scry-core", sha: $core},
+              {repository: "scry-mcp/scry-mame", sha: $mame},
+              {repository: "scry-mcp/scry-dosbox-x", sha: $dosbox_x}]}' \
+            | aws s3 cp - "${prefix}release.json"
       - name: Fetch the release
-        env:
-          RELEASE: ${{ inputs.release || github.sha }}
         run: |
           prefix="s3://$BUCKET/releases/$RELEASE/"
-          if ! expected="$(aws s3 cp "${prefix}objects.txt" -)"; then
-            echo "release $RELEASE has no manifest; publish it from its commit before rolling back to it"
+          if ! aws s3 cp "${prefix}release.json" "$RUNNER_TEMP/release.json"; then
+            echo "release $RELEASE has no manifest: it does not exist, or its upload did not finish"
+            exit 1
+          fi
+          if [ "$(jq -r .release "$RUNNER_TEMP/release.json")" != "$RELEASE" ]; then
+            echo "the manifest under releases/$RELEASE/ names another release"
+            exit 1
+          fi
+          expected="$(jq -r .objects "$RUNNER_TEMP/release.json")"
+          if ! [[ "$expected" =~ ^[1-9][0-9]*$ ]]; then
+            echo "the manifest of release $RELEASE records no object count"
             exit 1
           fi
           # The listing's own status is read first: a refused call must not read as an empty
@@ -151,7 +207,7 @@ jobs:
           fi
           mkdir -p "$RUNNER_TEMP/site"
           aws s3 cp --recursive --quiet "$prefix" "$RUNNER_TEMP/site/"
-          rm -f "$RUNNER_TEMP/site/objects.txt"
+          rm -f "$RUNNER_TEMP/site/release.json"
           # A downloaded file keeps its object's upload time, so an older release is older than
           # the root, and sync skips an older file of the same size: every file is made newer.
           find "$RUNNER_TEMP/site" -type f -exec touch {} +
@@ -161,3 +217,17 @@ jobs:
             --cache-control 'public, max-age=0, must-revalidate'
       - name: Invalidate
         run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/*'
+      # The runs' summaries are the list of releases and of what each was built from.
+      - name: Name the release in the run's summary
+        run: |
+          {
+            if [ -n "$ROLLBACK" ]; then
+              echo "### Served again: release \`$RELEASE\`"
+            else
+              echo "### Published: release \`$RELEASE\`"
+            fi
+            echo
+            echo "Built $(jq -r .built_at "$RUNNER_TEMP/release.json") from:"
+            echo
+            jq -r '.commits[] | "- \(.repository) `\(.sha)`"' "$RUNNER_TEMP/release.json"
+          } >> "$GITHUB_STEP_SUMMARY"

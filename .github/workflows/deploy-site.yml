@@ -1,12 +1,12 @@
 # Production, launched by hand from main: the launch is the approval. The steps are in
-# `publish-site.yml`; a rollback is this run with an earlier commit in `release`.
+# `publish-site.yml`; a rollback is this run with an earlier release's name in `release`.
 name: Deploy site
 
 on:
   workflow_dispatch:
     inputs:
       release:
-        description: Release to publish (a commit already under releases/); empty builds the dispatched ref
+        description: Release to serve again, by name (20261118-153012-f10abef); empty builds a new one
         required: false
         default: ""
 
