@@ -39,7 +39,7 @@ def replace(f: Path, old: str, new: str) -> None:
 def test_builds_every_page_and_lands_every_link(repos: Path, tmp_path: Path) -> None:
     report = build.build(repos, tmp_path / "site")
     site = tmp_path / "site"
-    assert report["pages"] == 23
+    assert report["pages"] == 25
     assert report["links"] > 0
     for page in ("index.html", "404.html", "reference/index.html", "mame/index.html",
                  "mame/reference/index.html", "mame/reference/breakpoints/index.html",
@@ -58,7 +58,7 @@ def test_builds_every_page_and_lands_every_link(repos: Path, tmp_path: Path) -> 
 def test_main_reports_and_exits(repos: Path, tmp_path: Path,
                                 capsys: pytest.CaptureFixture[str]) -> None:
     assert build.main([str(repos), "--out", str(tmp_path / "site")]) == 0
-    assert json.loads(capsys.readouterr().out)["pages"] == 23
+    assert json.loads(capsys.readouterr().out)["pages"] == 25
     assert build.main([str(tmp_path / "none"), "--out", str(tmp_path / "x")]) == 3
     assert capsys.readouterr().err.startswith("INVALID: no scry-mame checkout")
 
@@ -1071,3 +1071,107 @@ def test_check_refuses_an_id_a_page_holds_twice(tmp_path: Path) -> None:
                                      '<a href="a.html#pages">x</a>')
     with pytest.raises(Invalid, match=r"a.html.*'pages'.*twice"):
         check(tmp_path)
+
+
+# ---- search engines and measurement ---------------------------------------------------------
+
+GA_ID = "G-TESTTEST12"
+
+
+def test_every_page_names_its_own_address_and_the_not_found_page_stays_out_of_every_index(
+        repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    for page in ("index.html", "mame/index.html", "mame/reference/breakpoints/watch_add.html",
+                 "mame/demos/gridlee/index.html", "privacy.html"):
+        text = (site / page).read_text()
+        want = "https://scryai.net/" if page == "index.html" else f"https://scryai.net/{page}"
+        assert text.count('<link rel="canonical"') == 1, page
+        assert f'<link rel="canonical" href="{want}">' in text, page
+        assert f'<meta property="og:url" content="{want}">' in text, page
+        assert "noindex" not in text, page
+    missing = (site / "404.html").read_text()
+    assert '<meta name="robots" content="noindex">' in missing
+    assert "canonical" not in missing
+
+
+def test_only_the_home_carries_the_structured_data(repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    home = (site / "index.html").read_text()
+    found = re.search(r'<script type="application/ld\+json">(.*?)</script>', home)
+    assert found
+    data = json.loads(found[1])
+    assert data["@type"] == "SoftwareApplication"
+    assert data["url"] == "https://scryai.net/"
+    assert data["description"] == build.TAGLINE
+    assert "ld+json" not in (site / "mame/index.html").read_text()
+
+
+def test_the_sitemap_lists_every_built_page_but_the_not_found_one(repos: Path,
+                                                                  tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    listed = set(re.findall(r"<loc>(.*?)</loc>", (site / "sitemap.xml").read_text()))
+    built_pages = {p.relative_to(site).as_posix() for p in site.rglob("*.html")} - {"404.html"}
+    want = {"https://scryai.net/" if p == "index.html" else f"https://scryai.net/{p}"
+            for p in built_pages}
+    assert len(want) > 20
+    assert listed == want
+
+
+def test_robots_invites_the_ai_crawlers_by_name_and_points_at_the_sitemap(
+        repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    robots = (tmp_path / "site" / "robots.txt").read_text()
+    for name in ("GPTBot", "OAI-SearchBot", "ClaudeBot", "PerplexityBot", "Google-Extended"):
+        assert f"User-agent: {name}\nAllow: /\n" in robots
+    assert "Disallow" not in robots
+    assert robots.endswith("Sitemap: https://scryai.net/sitemap.xml\n")
+
+
+def test_a_build_without_a_property_id_has_no_banner_and_no_tag(
+        repos: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SCRY_GA4_ID", raising=False)
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    for page in ("index.html", "cookies.html", "mame/index.html", "404.html"):
+        text = (site / page).read_text()
+        assert 'id="consent"' not in text and "consent.js" not in text, page
+    assert 'href="privacy.html"' in (site / "cookies.html").read_text()
+
+
+def test_a_build_with_a_property_id_shows_the_banner_closed_and_loads_only_the_script_file(
+        repos: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SCRY_GA4_ID", GA_ID)
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    page = (site / "mame/reference/breakpoints/watch_add.html").read_text()
+    assert re.search(r'<section class="consent" id="consent"[^>]* hidden>', page)
+    assert (f'<script defer src="../../../consent.js" data-ga="{GA_ID}" '
+            'data-host="scryai.net">') in page
+    assert page.count("Reject") == 1 and page.count(">Accept<") == 1
+    assert "googletagmanager" not in page
+    assert "googletagmanager" in (site / "consent.js").read_text()
+    # the not-found page is served at any depth, so it reaches the script from the root
+    assert 'src="/consent.js"' in (site / "404.html").read_text()
+
+
+@pytest.mark.parametrize("value", ["UA-12345-1", "g-abc123def4", "G-", "G-ABC 123", "x"])
+def test_a_property_id_that_is_not_one_is_invalid(
+        repos: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("SCRY_GA4_ID", value)
+    with pytest.raises(Invalid, match="SCRY_GA4_ID"):
+        build.build(repos, tmp_path / "site")
+    assert not (tmp_path / "site").exists()
+
+
+def test_every_page_links_the_privacy_and_cookies_pages_and_they_link_each_other(
+        repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    assert 'href="./privacy.html">Privacy' in (site / "index.html").read_text()
+    assert 'href="../../../privacy.html">Privacy' in (
+        site / "mame/demos/gridlee/index.html").read_text()
+    assert 'href="privacy.html"' in (site / "cookies.html").read_text()
+    assert 'href="cookies.html"' in (site / "privacy.html").read_text()

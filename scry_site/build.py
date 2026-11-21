@@ -10,6 +10,7 @@ import argparse
 import dataclasses
 import html
 import json
+import os
 import posixpath
 import re
 import shutil
@@ -19,7 +20,7 @@ from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
 
-from scry_site import demos, example, home, motion, reference, render, sources
+from scry_site import analytics, demos, example, home, motion, reference, render, seo, sources
 from scry_site.check import NOT_FOUND, check
 from scry_site.sources import GROUPS, Family, Invalid, Page, Repo, collect, read, repos
 
@@ -156,13 +157,16 @@ def tool_side(f: Family, fams: list[Family], ts: list[reference.Tool], current: 
 
 
 def shell(*, title: str, description: str, out: str, body: str, credits: str, head: str = "",
-          nav: str = "") -> str:
+          nav: str = "", measurement: str = "") -> str:
     # The not-found page is served at whatever address was asked, so it links from the root.
     root = "" if out == NOT_FOUND else rel(".", out) if posixpath.dirname(out) else "."
     on = {k: " aria-current=page" if nav == k else "" for k in ("demos", "reference")}
     return template("page.html", title=html.escape(title), description=html.escape(description),
                     root=root, head=f"<style>\n{head}\n</style>" if head else "", body=body,
-                    credits=credits, nav_demos=on["demos"], nav_reference=on["reference"])
+                    credits=credits, nav_demos=on["demos"], nav_reference=on["reference"],
+                    seo=seo.head(out, title, description, TAGLINE),
+                    consent=analytics.banner(root, measurement),
+                    tracking=analytics.script(root, measurement))
 
 
 #: A command page's way back to its side list, for a reader deep in the text on a phone.
@@ -212,6 +216,7 @@ class Site:
                     raise Invalid(f"{f.page.repo.name}: two entries of `{t.name}`")
                 self.tool_pages[key] = t.out
         self.credits = credits_line(self.repo("core"))
+        self.measurement = analytics.measurement_id(os.environ)
         self.rendered: dict[str, str] = {}
         self.clips: dict[str, motion.Clip] = {}
 
@@ -242,7 +247,8 @@ class Site:
     def put(self, page_out: str, title: str, description: str, body: str, *, head: str = "",
             nav: str = "") -> None:
         self.rendered[page_out] = shell(title=title, description=description, out=page_out,
-                                        body=body, credits=self.credits, head=head, nav=nav)
+                                        body=body, credits=self.credits, head=head, nav=nav,
+                                        measurement=self.measurement)
 
     def demo_list(self) -> list[home.Demo]:
         """Every demo once, by name: the hero's first, then each front door's order."""
@@ -359,6 +365,13 @@ class Site:
         self.put(out, "Reference · SCRY", "Every tool of the two SCRY servers, by family.",
                  solo(body), nav="reference")
 
+    def legal(self) -> None:
+        """The privacy and cookies pages the foot links to."""
+        self.put("privacy.html", "Privacy · SCRY", "Who runs the SCRY site and what it collects.",
+                 solo(analytics.PRIVACY))
+        self.put("cookies.html", "Cookies · SCRY", "The cookies the SCRY site sets, and how to "
+                 "change your choice.", solo(analytics.COOKIES))
+
     def not_found(self) -> None:
         body = ("<h1>Page not found</h1><p class=lead>Nothing on this site lives at this "
                 'address. Start from the <a href="/index.html">home</a>, the '
@@ -415,12 +428,15 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
     site.render_pages(ds)
     site.reference_index()
     site.home(ds)
+    site.legal()
     site.not_found()
     twins = {twin_path(p): render.twin(p, site.links) for p in site.pages}
     if site.links.broken:
         raise Invalid("links in the sources to paths no repository tracks:\n  "
                       + "\n  ".join(sorted(site.links.broken)))
-    for path, text in {**site.rendered, **twins, "llms.txt": llms_txt(rs, site.pages)}.items():
+    extras = {"llms.txt": llms_txt(rs, site.pages), "robots.txt": seo.robots(),
+              "sitemap.xml": seo.sitemap(site.rendered)}
+    for path, text in {**site.rendered, **twins, **extras}.items():
         if "linkedin" in text.lower():
             raise Invalid(f"{path}: a mention of LinkedIn; the site links the author's GitHub "
                           "only, through the credits line")

@@ -73,6 +73,8 @@ jobs:
         timeout-minutes: 3
         run: uv sync --locked
       - name: Check and build
+        env:
+          SCRY_GA4_ID: ${{ vars.SCRY_GA4_ID }}
         run: |
           uv run --locked ruff check .
           uv run --locked mypy --strict .

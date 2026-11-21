@@ -3,7 +3,10 @@ design rules' counts: contrast, the home's words, and widths measured in a headl
 
 from __future__ import annotations
 
+import functools
+import http.server
 import re
+import threading
 from collections.abc import Iterator
 from importlib import resources
 from pathlib import Path
@@ -12,6 +15,8 @@ import pytest
 from chrome import Chrome, binary
 from conftest import checkouts
 from look import Unreadable, contrast, home_limits
+
+from scry_site import build
 
 CSS = resources.files("scry_site").joinpath("static", "site.css").read_text(encoding="utf-8")
 #: What a page measures at a width, every fold opened: how wide the page scrolls, how many panes
@@ -329,3 +334,179 @@ def test_a_finger_takes_every_crumb_on_a_phone(real_site: Path, chrome: Chrome) 
         chrome.load((real_site / page).as_uri(), 390, 844)
         found[page] = chrome.answer(CRUMBS)
     assert found == {page: [True, True] for page in found}
+
+
+# ---- measurement: what a visitor's choice does in a real browser ------------------------------
+
+PROPERTY = "G-TESTTEST12"
+STATE = """(() => ({
+  banner: (() => { const b = document.getElementById('consent'); return b ? !b.hidden : null; })(),
+  tags: [...document.querySelectorAll('script[src*="googletagmanager"]')].map(s => s.src),
+  layer: (window.dataLayer || []).map(c => Array.from(c)),
+  stored: JSON.parse(localStorage.getItem('scry-consent-v1') || 'null')
+}))()"""
+BANNER = """(() => {
+  const b = document.getElementById('consent');
+  return [document.documentElement.scrollWidth,
+          [...b.querySelectorAll('button')].map(x => Math.round(x.getBoundingClientRect().height))];
+})()"""
+GOOGLE = ["*googletagmanager.com*", "*google-analytics.com*", "*analytics.google.com*"]
+
+
+@pytest.fixture(scope="module")
+def measured(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    """The real site built with a property id and served on 127.0.0.1, which that copy names as
+    the one host that measures."""
+    out = tmp_path_factory.mktemp("measured") / "site"
+    with pytest.MonkeyPatch.context() as env:
+        env.setenv("SCRY_GA4_ID", PROPERTY)
+        build.build(checkouts(), out)
+    for page in ("index.html", "cookies.html"):
+        f = out / page
+        text = f.read_text()
+        assert 'data-host="scryai.net"' in text
+        f.write_text(text.replace('data-host="scryai.net"', 'data-host="127.0.0.1"'))
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(
+        ("127.0.0.1", 0), functools.partial(Quiet, directory=str(out)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"127.0.0.1:{server.server_port}"
+    server.shutdown()
+    server.server_close()
+
+
+def fresh(chrome: Chrome, url: str, width: int = 1440) -> None:
+    """The page with no stored choice, and no request to Google able to leave the machine."""
+    chrome.ws.call("Network.enable")
+    chrome.ws.call("Network.setBlockedURLs", urls=GOOGLE)
+    chrome.load(url, width, 900)
+    chrome.answer("localStorage.clear()")
+    chrome.load(url, width, 900)
+
+
+def click(chrome: Chrome, choice: str) -> None:
+    assert chrome.answer(f"(document.querySelector('[data-consent={choice}]').click(), true)")
+
+
+def test_before_a_choice_the_banner_shows_and_nothing_is_sent_to_google(
+        measured: str, chrome: Chrome) -> None:
+    fresh(chrome, f"http://{measured}/index.html")
+    assert chrome.answer(STATE) == {"banner": True, "tags": [], "layer": [], "stored": None}
+
+
+def test_the_banner_fits_a_phone_and_both_answers_are_a_finger_high(
+        measured: str, chrome: Chrome) -> None:
+    fresh(chrome, f"http://{measured}/index.html", width=390)
+    width, heights = chrome.answer(BANNER)
+    assert width == 390
+    assert len(heights) == 2 and min(heights) >= 44
+
+
+def test_accepting_loads_the_tag_once_with_the_advertising_signals_denied(
+        measured: str, chrome: Chrome) -> None:
+    fresh(chrome, f"http://{measured}/index.html")
+    click(chrome, "granted")
+    state = chrome.answer(STATE)
+    assert state["banner"] is False
+    assert state["tags"] == [f"https://www.googletagmanager.com/gtag/js?id={PROPERTY}"]
+    assert state["stored"]["decision"] == "granted"
+    commands = state["layer"]
+    assert commands[0] == ["consent", "default", {
+        "ad_storage": "denied", "ad_user_data": "denied", "ad_personalization": "denied",
+        "analytics_storage": "denied"}]
+    assert commands[1] == ["consent", "update", {"analytics_storage": "granted"}]
+    assert [c[:2] for c in commands[2:]] == [["js", commands[2][1]], ["config", PROPERTY]]
+
+
+def test_rejecting_loads_nothing_and_is_remembered_on_the_next_visit(
+        measured: str, chrome: Chrome) -> None:
+    url = f"http://{measured}/index.html"
+    fresh(chrome, url)
+    click(chrome, "denied")
+    assert chrome.answer(STATE)["banner"] is False
+    chrome.load(url, 1440, 900)
+    state = chrome.answer(STATE)
+    assert (state["banner"], state["tags"], state["layer"]) == (False, [], [])
+    assert state["stored"]["decision"] == "denied"
+
+
+def test_a_visitor_who_accepted_before_is_measured_without_being_asked(
+        measured: str, chrome: Chrome) -> None:
+    url = f"http://{measured}/index.html"
+    fresh(chrome, url)
+    chrome.answer("localStorage.setItem('scry-consent-v1', JSON.stringify("
+                  "{decision: 'granted', at: Date.now()}))")
+    chrome.load(url, 1440, 900)
+    state = chrome.answer(STATE)
+    assert state["banner"] is False
+    assert len(state["tags"]) == 1
+
+
+@pytest.mark.parametrize("stored", [
+    "{decision: 'granted', at: Date.now() - 184 * 24 * 3600 * 1000}",
+    "{decision: 'granted', at: Date.now() + 60000}",
+    "{decision: 'maybe', at: Date.now()}"])
+def test_a_choice_that_expired_or_is_not_one_asks_again_and_loads_nothing(
+        measured: str, chrome: Chrome, stored: str) -> None:
+    url = f"http://{measured}/index.html"
+    fresh(chrome, url)
+    chrome.answer(f"localStorage.setItem('scry-consent-v1', JSON.stringify({stored}))")
+    chrome.load(url, 1440, 900)
+    state = chrome.answer(STATE)
+    assert (state["banner"], state["tags"], state["layer"]) == (True, [], [])
+
+
+def test_another_host_neither_asks_nor_measures(measured: str, chrome: Chrome) -> None:
+    other = measured.replace("127.0.0.1", "localhost")
+    fresh(chrome, f"http://{other}/index.html")
+    assert chrome.answer(STATE) == {"banner": False, "tags": [], "layer": [], "stored": None}
+
+
+def test_a_browser_that_denies_storage_still_asks_and_keeps_the_answer_for_the_visit(
+        measured: str, chrome: Chrome) -> None:
+    url = f"http://{measured}/index.html"
+    fresh(chrome, url)
+    denied = chrome.ws.call("Page.addScriptToEvaluateOnNewDocument", source=(
+        "Object.defineProperty(window, 'localStorage', {configurable: true, get() {"
+        " throw new DOMException('denied', 'SecurityError'); }});"))["identifier"]
+    try:
+        chrome.load(url, 1440, 900)
+        assert chrome.answer("document.getElementById('consent').hidden") is False
+        click(chrome, "denied")
+        assert chrome.answer("document.getElementById('consent').hidden") is True
+    finally:
+        chrome.ws.call("Page.removeScriptToEvaluateOnNewDocument", identifier=denied)
+
+
+def test_the_cookies_page_withdraws_the_choice_and_asks_again(
+        measured: str, chrome: Chrome) -> None:
+    url = f"http://{measured}/cookies.html"
+    fresh(chrome, url)
+    assert chrome.answer("document.querySelector('[data-consent=reset]').hidden") is False
+    click(chrome, "granted")
+    assert chrome.answer(STATE)["stored"]["decision"] == "granted"
+    click(chrome, "reset")
+    state = chrome.answer(STATE)
+    assert state["banner"] is True and state["stored"] is None
+
+
+def test_rejecting_after_accepting_in_the_same_visit_withdraws_analytics_storage(
+        measured: str, chrome: Chrome) -> None:
+    fresh(chrome, f"http://{measured}/cookies.html")
+    click(chrome, "granted")
+    click(chrome, "reset")
+    click(chrome, "denied")
+    last = chrome.answer(STATE)["layer"][-1]
+    assert last == ["consent", "update", {"analytics_storage": "denied"}]
+
+
+def test_the_cookies_and_privacy_pages_hold_the_site_s_layout_at_both_widths(
+        real_site: Path, chrome: Chrome) -> None:
+    for width in (390, 1440):
+        for page in ("cookies.html", "privacy.html"):
+            chrome.load((real_site / page).as_uri(), width, 844)
+            assert chrome.answer(MEASURE) == [width, 0, 0], (page, width)

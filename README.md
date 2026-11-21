@@ -84,6 +84,13 @@ It lists every one of these:
 - `scry_site/render.py` renders markdown with GitHub's heading anchors, and points each
   relative link at its page here, at a copy of the file, or at the file on GitHub.
 - `scry_site/check.py` follows every link inside the built site.
+- `scry_site/seo.py` writes what search engines and AI crawlers read: each page's canonical
+  address and social tags, the home's structured data, `robots.txt` (which names the AI
+  crawlers it welcomes) and `sitemap.xml`.
+- `scry_site/analytics.py` and `scry_site/static/consent.js` ask the visitor before measuring
+  with Google Analytics, and write the privacy and cookies pages. A build with no
+  `SCRY_GA4_ID` in its environment has no banner, no tag and no measurement; the id is the
+  property's `G-` value, public by nature since it travels in the page.
 - `scry_site/build.py` puts it together. It also writes a markdown copy of every page made from
   a whole document, `llms.txt`, which lists those copies, and `404.html`, the page served for
   any address that holds none.
@@ -153,6 +160,9 @@ gh workflow run deploy-site.yml --ref main -f release=20261118-153012-f10abef
 
 A run refuses a name it does not know, and a release whose upload never finished. Releases from
 before this naming, named by a commit alone, stay stored but cannot be served again.
+
+The property's id comes from the repository variable `SCRY_GA4_ID`; without it the published
+site measures nothing.
 
 A pull request and every push to `main` run the checks and the build in `ci.yml`. Both
 workflows clone the three repositories without a token, so they must stay public.

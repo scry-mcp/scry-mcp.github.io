@@ -89,6 +89,14 @@ small code{font-size:1em}
 .eject a{display:inline-flex;align-items:center;min-height:44px;color:var(--fg);text-decoration:none}
 .eject a:hover{color:var(--onbtn);text-shadow:0 0 8px rgba(255,255,255,.45)}
 
+/* ---- the consent banner: above the bar and in the flow, so it covers no control ---------- */
+.consent{background:var(--surface);border-bottom:1px solid var(--line);padding:var(--s4) 0}
+.consent[hidden]{display:none}
+.consent p{margin:0 0 var(--s3)}
+.consent .choices{display:flex;flex-wrap:wrap;gap:var(--s3)}
+button.btn{cursor:pointer}
+.legal a+a{margin-left:var(--s4)}
+
 /* ---- buttons ----------------------------------------------------------------------------- */
 .btn{display:inline-flex;align-items:center;gap:var(--s2);min-height:48px;padding:0 var(--s5);background:var(--btn);color:var(--onbtn);font:700 1rem/1 var(--sans);text-decoration:none;border:2px solid var(--btn);box-shadow:0 0 24px rgba(var(--glow),.35);transition:box-shadow .15s,border-color .15s}
 .btn.ghost{background:transparent;color:var(--fg);border-color:var(--edge);box-shadow:none}
