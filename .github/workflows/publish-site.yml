@@ -219,6 +219,28 @@ jobs:
             --cache-control 'public, max-age=0, must-revalidate'
       - name: Invalidate
         run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/*'
+      # Tells Bing and the other IndexNow engines which pages are served now. Best effort: a
+      # refusal there never undoes a publish, so the step may fail without failing the run.
+      - name: Tell the IndexNow engines
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          set -o pipefail
+          keyfile=""
+          for f in "$RUNNER_TEMP"/site/*.txt; do
+            [[ "$(basename "$f")" =~ ^[0-9a-f]{32}\.txt$ ]] && keyfile="$f"
+          done
+          [ -n "$keyfile" ] || { echo "no IndexNow key file in the release"; exit 1; }
+          key="$(cat "$keyfile")"
+          [ "$(basename "$keyfile")" = "$key.txt" ] || { echo "the key file does not hold its own name"; exit 1; }
+          grep -o '<loc>[^<]*</loc>' "$RUNNER_TEMP/site/sitemap.xml" | sed -e 's/<loc>//' -e 's/<\/loc>//' \
+            | jq -R . | jq -s --arg key "$key" \
+              '{host: "scryai.net", key: $key, keyLocation: "https://scryai.net/\($key).txt", urlList: .}' \
+            > "$RUNNER_TEMP/indexnow.json"
+          jq -e '.urlList | length > 0' "$RUNNER_TEMP/indexnow.json" > /dev/null
+          curl --fail --silent --show-error --retry 3 --retry-delay 20 --max-time 60 \
+            -H 'Content-Type: application/json; charset=utf-8' \
+            --data @"$RUNNER_TEMP/indexnow.json" https://api.indexnow.org/indexnow
       # The runs' summaries are the list of releases and of what each was built from.
       - name: Name the release in the run's summary
         run: |

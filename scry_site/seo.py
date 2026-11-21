@@ -14,6 +14,8 @@ SITE = "https://scryai.net"
 HOME = "index.html"
 SITE_NAME = "SCRY"
 IMAGE = f"{SITE}/scry-logo.png"
+#: IndexNow's key is public by design: the engines fetch it from the site to know who submits.
+INDEXNOW_KEY = "6ff77efa22ac35bf11e654161116942f"
 #: Named one by one so that an AI search or assistant is invited by name, not left to the `*` rule.
 CRAWLERS = ("GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-User",
             "PerplexityBot", "Google-Extended", "CCBot")

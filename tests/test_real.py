@@ -523,6 +523,19 @@ JAR = "document.cookie.split('; ').map(c => c.split('=')[0]).sort()"
 OFF = "window['ga-disable-" + PROPERTY + "']"
 
 
+def test_the_legal_links_of_the_foot_are_a_finger_high_on_a_phone(
+        real_site: Path, chrome: Chrome) -> None:
+    chrome.load((real_site / "index.html").as_uri(), 390, 844)
+    heights = chrome.answer("[...document.querySelectorAll('.legal a')]"
+                            ".map(a => a.getBoundingClientRect().height)")
+    assert len(heights) == 2 and min(heights) >= 44
+
+
+def test_the_real_site_is_built_with_no_property_whatever_the_machine_exports(
+        real_site: Path) -> None:
+    assert "data-ga" not in (real_site / "index.html").read_text()
+
+
 def test_a_hidden_button_stays_hidden_where_the_script_does_not_run(
         real_site: Path, chrome: Chrome) -> None:
     chrome.load((real_site / "cookies.html").as_uri(), 1440, 900)

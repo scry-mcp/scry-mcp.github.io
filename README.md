@@ -86,7 +86,9 @@ It lists every one of these:
 - `scry_site/check.py` follows every link inside the built site.
 - `scry_site/seo.py` writes what search engines and AI crawlers read: each page's canonical
   address and social tags, the home's structured data, `robots.txt` (which names the AI
-  crawlers it welcomes) and `sitemap.xml`.
+  crawlers it welcomes) and `sitemap.xml`. It also holds the IndexNow key, a public value the
+  build serves as `<key>.txt`; the publish workflow sends the sitemap's addresses to
+  IndexNow after each publish, and a failure there does not fail the run.
 - `scry_site/analytics.py` and `scry_site/static/consent.js` ask the visitor before measuring
   with Google Analytics, and write the privacy and cookies pages. A build with no
   `SCRY_GA4_ID` in its environment has no banner, no tag and no measurement; the id is the

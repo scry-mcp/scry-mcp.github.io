@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import struct
 import subprocess
@@ -9,7 +10,7 @@ from pathlib import Path
 import pytest
 from fixtures import CREDITS, demo_readme, entry, family, git_repo, make, server, track, webp
 
-from scry_site import build, example, motion, render, sources
+from scry_site import build, example, motion, render, seo, sources
 from scry_site.check import check
 from scry_site.sources import Invalid
 
@@ -1128,6 +1129,20 @@ def test_robots_invites_the_ai_crawlers_by_name_and_points_at_the_sitemap(
         assert f"User-agent: {name}\nAllow: /\n" in robots
     assert "Disallow" not in robots
     assert robots.endswith("Sitemap: https://scryai.net/sitemap.xml\n")
+
+
+def test_the_site_serves_the_indexnow_key_and_the_sitemap_does_not_list_it(
+        repos: Path, tmp_path: Path) -> None:
+    build.build(repos, tmp_path / "site")
+    site = tmp_path / "site"
+    key = seo.INDEXNOW_KEY
+    assert re.fullmatch(r"[0-9a-f]{32}", key)
+    assert (site / f"{key}.txt").read_text() == key
+    assert key not in (site / "sitemap.xml").read_text()
+
+
+def test_the_machine_s_property_id_never_reaches_a_build() -> None:
+    assert "SCRY_GA4_ID" not in os.environ
 
 
 def test_a_build_without_a_property_id_has_no_banner_and_no_tag(

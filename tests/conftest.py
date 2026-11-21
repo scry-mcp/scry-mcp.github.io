@@ -27,5 +27,13 @@ def checkouts() -> Path:
 def real_site(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """The site built once from the real checkouts."""
     out = tmp_path_factory.mktemp("real") / "site"
-    build.build(checkouts(), out)
+    with pytest.MonkeyPatch.context() as env:
+        env.delenv("SCRY_GA4_ID", raising=False)
+        build.build(checkouts(), out)
     return out
+
+
+@pytest.fixture(autouse=True)
+def no_property_in_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A build measures only where a test says so, whatever the machine exports."""
+    monkeypatch.delenv("SCRY_GA4_ID", raising=False)

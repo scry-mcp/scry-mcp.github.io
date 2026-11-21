@@ -435,7 +435,8 @@ def render_site(rs: list[Repo], into: Path) -> dict[str, int]:
         raise Invalid("links in the sources to paths no repository tracks:\n  "
                       + "\n  ".join(sorted(site.links.broken)))
     extras = {"llms.txt": llms_txt(rs, site.pages), "robots.txt": seo.robots(),
-              "sitemap.xml": seo.sitemap(site.rendered)}
+              "sitemap.xml": seo.sitemap(site.rendered),
+              f"{seo.INDEXNOW_KEY}.txt": seo.INDEXNOW_KEY}
     for path, text in {**site.rendered, **twins, **extras}.items():
         if "linkedin" in text.lower():
             raise Invalid(f"{path}: a mention of LinkedIn; the site links the author's GitHub "
