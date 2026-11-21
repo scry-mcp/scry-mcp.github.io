@@ -63,9 +63,10 @@ PRIVACY = f"""<h1>Privacy</h1>
 <p>Optimiza, the author of SCRY, at <a href="{AUTHOR}">{AUTHOR.removeprefix("https://")}</a>.
 Write there with any question about your data.</p>
 <h2>What is collected, and why</h2>
-<p>Only if you accept: the pages you visit and how you reached them, counted by Google Analytics
-to learn which pages are read. There are no accounts and no forms, and nothing is sold or used
-for advertising.</p>
+<p>Only if you accept, and sent to Google Analytics: the pages you visit and how you reached
+them, how far you scroll, the links you follow out of the site and the files you download, and
+your browser, device and approximate location. It is counted to learn which pages are read.
+There are no accounts and no forms, and nothing is sold or used for advertising.</p>
 <h2>Your rights</h2>
 <p>You can reject, or withdraw your choice at any time from the
 <a href="cookies.html">cookies page</a>. You may also ask for access to your data, its correction

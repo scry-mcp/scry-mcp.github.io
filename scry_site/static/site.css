@@ -91,7 +91,7 @@ small code{font-size:1em}
 
 /* ---- the consent banner: above the bar and in the flow, so it covers no control ---------- */
 .consent{background:var(--surface);border-bottom:1px solid var(--line);padding:var(--s4) 0}
-.consent[hidden]{display:none}
+.consent[hidden],.btn[hidden]{display:none}
 .consent p{margin:0 0 var(--s3)}
 .consent .choices{display:flex;flex-wrap:wrap;gap:var(--s3)}
 button.btn{cursor:pointer}

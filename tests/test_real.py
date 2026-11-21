@@ -466,7 +466,7 @@ def test_another_host_neither_asks_nor_measures(measured: str, chrome: Chrome) -
     assert chrome.answer(STATE) == {"banner": False, "tags": [], "layer": [], "stored": None}
 
 
-def test_a_browser_that_denies_storage_still_asks_and_keeps_the_answer_for_the_visit(
+def test_a_browser_that_denies_storage_still_asks_on_every_page_and_never_breaks_one(
         measured: str, chrome: Chrome) -> None:
     url = f"http://{measured}/index.html"
     fresh(chrome, url)
@@ -476,8 +476,12 @@ def test_a_browser_that_denies_storage_still_asks_and_keeps_the_answer_for_the_v
     try:
         chrome.load(url, 1440, 900)
         assert chrome.answer("document.getElementById('consent').hidden") is False
-        click(chrome, "denied")
+        click(chrome, "granted")
         assert chrome.answer("document.getElementById('consent').hidden") is True
+        tags = "document.querySelectorAll('script[src*=googletagmanager]').length"
+        assert chrome.answer(tags) == 1
+        chrome.load(url, 1440, 900)
+        assert chrome.answer("document.getElementById('consent').hidden") is False
     finally:
         chrome.ws.call("Page.removeScriptToEvaluateOnNewDocument", identifier=denied)
 
@@ -510,3 +514,57 @@ def test_the_cookies_and_privacy_pages_hold_the_site_s_layout_at_both_widths(
         for page in ("cookies.html", "privacy.html"):
             chrome.load((real_site / page).as_uri(), width, 844)
             assert chrome.answer(MEASURE) == [width, 0, 0], (page, width)
+
+
+PLANT = ("document.cookie = '_ga=GA1.1.1.1; path=/'; "
+         "document.cookie = '_ga_TESTTEST12=GS2.1.s1; path=/'; "
+         "document.cookie = 'keep=1; path=/'; true")
+JAR = "document.cookie.split('; ').map(c => c.split('=')[0]).sort()"
+OFF = "window['ga-disable-" + PROPERTY + "']"
+
+
+def test_a_hidden_button_stays_hidden_where_the_script_does_not_run(
+        real_site: Path, chrome: Chrome) -> None:
+    chrome.load((real_site / "cookies.html").as_uri(), 1440, 900)
+    reset = "document.querySelector('[data-consent=reset]')"
+    assert chrome.answer(f"getComputedStyle({reset}).display") == "none"
+
+
+def test_rejecting_removes_the_analytics_cookies_an_earlier_visit_left_and_keeps_the_rest(
+        measured: str, chrome: Chrome) -> None:
+    fresh(chrome, f"http://{measured}/index.html")
+    assert chrome.answer(PLANT)
+    assert chrome.answer(JAR) == ["_ga", "_ga_TESTTEST12", "keep"]
+    click(chrome, "denied")
+    assert chrome.answer(JAR) == ["keep"]
+    assert chrome.answer(OFF) is True
+
+
+def test_withdrawing_after_accepting_stops_the_tag_and_removes_its_cookies(
+        measured: str, chrome: Chrome) -> None:
+    fresh(chrome, f"http://{measured}/cookies.html")
+    click(chrome, "granted")
+    assert chrome.answer(OFF) is False
+    assert chrome.answer(PLANT)
+    click(chrome, "reset")
+    state = chrome.answer(STATE)
+    assert state["banner"] is True and state["stored"] is None
+    assert state["layer"][-1] == ["consent", "update", {"analytics_storage": "denied"}]
+    assert chrome.answer(OFF) is True
+    assert chrome.answer(JAR) == ["keep"]
+    click(chrome, "granted")
+    assert chrome.answer(OFF) is False
+
+
+def test_a_choice_changed_in_another_tab_reaches_a_tab_already_measuring(
+        measured: str, chrome: Chrome) -> None:
+    fresh(chrome, f"http://{measured}/index.html")
+    click(chrome, "granted")
+    assert chrome.answer(PLANT)
+    assert chrome.answer(
+        "(localStorage.setItem('scry-consent-v1', JSON.stringify({decision: 'denied', "
+        "at: Date.now()})), dispatchEvent(new StorageEvent('storage', "
+        "{key: 'scry-consent-v1'})), true)")
+    assert chrome.answer(OFF) is True
+    assert chrome.answer(JAR) == ["keep"]
+    assert chrome.answer("document.getElementById('consent').hidden") is True

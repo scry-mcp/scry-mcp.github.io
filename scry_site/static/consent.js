@@ -7,12 +7,11 @@
     LIFE = 183 * 24 * 3600 * 1000;
   if (!id || !hosts.includes(location.hostname)) return;
 
-  // A browser can deny storage for the origin: the choice then lives in memory for the visit.
-  const memory = {};
+  // A browser can deny storage for the origin: nothing is remembered and every page asks again.
   const store = {
-    get() { try { const v = localStorage.getItem(KEY); if (v !== null) return v; } catch {} return memory[KEY] ?? null; },
-    set(v) { try { localStorage.setItem(KEY, v); } catch { memory[KEY] = v; } },
-    del() { try { localStorage.removeItem(KEY); } catch {} delete memory[KEY]; },
+    get() { try { return localStorage.getItem(KEY); } catch { return null; } },
+    set(v) { try { localStorage.setItem(KEY, v); } catch {} },
+    del() { try { localStorage.removeItem(KEY); } catch {} },
   };
   const read = () => {
     try {
@@ -23,8 +22,22 @@
     return null;
   };
 
+  // Without a granted choice the tag sends nothing and the cookies of an earlier visit go too.
+  const off = "ga-disable-" + id;
+  const withdraw = () => {
+    window[off] = true;
+    if (loaded) gtag("consent", "update", { analytics_storage: "denied" });
+    for (const part of document.cookie.split(";")) {
+      const name = part.split("=")[0].trim();
+      if (!/^_ga(_|$)/.test(name)) continue;
+      for (const scope of ["", "; domain=" + location.hostname, "; domain=." + location.hostname])
+        document.cookie = name + "=; Max-Age=0; path=/" + scope;
+    }
+  };
+
   let loaded = false;
   const load = () => {
+    window[off] = false;
     if (loaded) return gtag("consent", "update", { analytics_storage: "granted" });
     loaded = true;
     const layer = window.dataLayer = window.dataLayer || [];
@@ -46,18 +59,25 @@
     store.set(JSON.stringify({ decision: choice, at: Date.now() }));
     if (banner) banner.hidden = true;
     if (choice === "granted") load();
-    else if (loaded) gtag("consent", "update", { analytics_storage: "denied" });
+    else withdraw();
   };
   for (const b of document.querySelectorAll("[data-consent]")) {
     b.hidden = false;
     b.addEventListener("click", () => {
       if (b.dataset.consent !== "reset") return decide(b.dataset.consent);
       store.del();
+      withdraw();
       if (banner) { banner.hidden = false; banner.querySelector("button").focus(); }
     });
   }
-  // Only the buttons inside the banner were shown above; the banner opens when no choice stands.
-  if (banner) for (const b of banner.querySelectorAll("button")) b.hidden = false;
+  // Another tab's choice reaches this one: a tab already measuring stops when it is rejected.
+  addEventListener("storage", e => {
+    if (e.key !== null && e.key !== KEY) return;
+    const choice = read();
+    if (banner) banner.hidden = choice !== null;
+    if (choice === "granted") load();
+    else withdraw();
+  });
   const now = read();
   if (now === "granted") load();
   else if (now === null && banner) banner.hidden = false;
