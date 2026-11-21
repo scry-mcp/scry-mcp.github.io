@@ -164,7 +164,9 @@ A run refuses a name it does not know, and a release whose upload never finished
 before this naming, named by a commit alone, stay stored but cannot be served again.
 
 The property's id comes from the repository variable `SCRY_GA4_ID`; without it the published
-site measures nothing.
+site measures nothing. After each publish the workflow also tells IndexNow, the protocol Bing
+and other engines read, which pages are served; the key it uses is public and is served at the
+site's root.
 
 A pull request and every push to `main` run the checks and the build in `ci.yml`. Both
 workflows clone the three repositories without a token, so they must stay public.
